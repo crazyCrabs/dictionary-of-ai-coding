@@ -1,9 +1,16 @@
 #!/usr/bin/env -S npx tsx
 // Generate a self-contained static site (3D force graph + detail panel) from
 // internal/Curriculum.md + dictionary/*.md. Output: site/index.html.
-// The 3D graph uses 3d-force-graph loaded from CDN.
+// three.js + 3d-force-graph are vendored in internal/vendor/ and copied to site/vendor/.
 
-import { readFileSync, writeFileSync, mkdirSync, readdirSync } from "node:fs";
+import {
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  readdirSync,
+  copyFileSync,
+  existsSync,
+} from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { Marked } from "marked";
@@ -13,6 +20,8 @@ const ROOT = dirname(HERE);
 const CURRICULUM = join(HERE, "Curriculum.md");
 const DICT_DIR = join(ROOT, "dictionary");
 const OUT_DIR = join(ROOT, "site");
+const VENDOR_SRC = join(HERE, "vendor");
+const VENDOR_FILES = ["three.min.js", "3d-force-graph.min.js"];
 
 const SECTION_RE = /^## Section \d+ — .+$/;
 const BULLET_RE = /^- (.+)$/;
@@ -276,8 +285,21 @@ const html = `<!doctype html>
     font-size: 17px; cursor: pointer; display: flex; align-items: center; justify-content: center;
   }
   .fab:hover { border-color: var(--muted); }
-  #searchBtn { top: 20px; left: 20px; }
   #infoBtn { top: 20px; right: 20px; font-style: italic; font-family: Georgia, serif; }
+  #searchBar {
+    position: absolute; top: 20px; left: 20px; z-index: 5;
+    display: flex; align-items: center; gap: 10px;
+    background: var(--panel-bg); border: 1px solid var(--border);
+    border-radius: 999px; padding: 9px 18px; width: 400px; max-width: calc(100% - 120px);
+  }
+  #searchBar .icon { color: var(--muted); font-size: 15px; }
+  #searchInput { flex: 1; border: none; outline: none; background: transparent; color: var(--fg); font: inherit; min-width: 0; }
+  #clearBtn { border: none; background: none; cursor: pointer; color: var(--muted); font-size: 18px; line-height: 1; padding: 0; display: none; }
+  #clearBtn:hover { color: var(--fg); }
+  #searchCount {
+    position: absolute; top: 78px; left: 32px; color: var(--muted); display: none;
+    font: 600 11px ui-monospace, Consolas, monospace; letter-spacing: 0.18em; text-transform: uppercase;
+  }
 
   #panel {
     flex: 0 0 42%; max-width: 560px; min-width: 380px; overflow-y: auto;
@@ -358,15 +380,6 @@ const html = `<!doctype html>
     background: var(--panel-bg); border: 1px solid var(--border); border-radius: 14px;
     width: min(560px, 90vw); max-height: 70vh; overflow: auto; padding: 18px;
   }
-  #searchInput {
-    width: 100%; padding: 12px 14px; font: inherit; color: var(--fg);
-    background: var(--bg); border: 1px solid var(--border); border-radius: 10px; outline: none;
-  }
-  #searchList { list-style: none; margin: 10px 0 0; padding: 0; }
-  #searchList li { padding: 10px 10px; border-radius: 8px; cursor: pointer; }
-  #searchList li:hover, #searchList li.active { background: rgba(128,128,128,0.12); }
-  #searchList .n { font-weight: 700; }
-  #searchList .d { color: var(--muted); font-size: 13.5px; }
   @media (max-width: 860px) {
     body { overflow: auto; }
     #app { flex-direction: column; height: auto; }
@@ -379,9 +392,14 @@ const html = `<!doctype html>
 <div id="app">
   <div id="graphWrap">
     <div id="graph"></div>
-    <button id="searchBtn" class="fab" title="搜索 (/)">&#x1F50D;</button>
+    <div id="searchBar">
+      <span class="icon">&#x1F50D;</span>
+      <input id="searchInput" type="text" placeholder="Search…" autocomplete="off">
+      <button id="clearBtn" title="清除">&#x2715;</button>
+    </div>
+    <div id="searchCount"></div>
     <button id="infoBtn" class="fab" title="关于">i</button>
-    <div id="hint">拖动旋转 · 滚轮缩放 · 拖节点移动 · 点击节点查看</div>
+    <div id="hint">拖动旋转 · 滚轮缩放 · 拖节点移动 · 点击节点查看 · 搜索时无关节点自动隐藏</div>
   </div>
   <div id="panel">
     <div id="panelInner"></div>
@@ -391,33 +409,19 @@ const html = `<!doctype html>
     </div>
   </div>
 </div>
-<div id="searchOverlay" class="overlay">
-  <div class="sheet">
-    <input id="searchInput" type="search" placeholder="搜索术语或正文… (Esc 关闭)" autocomplete="off">
-    <ul id="searchList"></ul>
-  </div>
-</div>
 <div id="infoOverlay" class="overlay">
   <div class="sheet">
     <h2 style="margin-top:0;">AI 编程词典</h2>
     <p>把 AI 编程的词汇翻译成大白话。中文版译自 Matt Pocock 的 AI Coding Dictionary(aihero.dev),词条结构与概念归原作者。</p>
-    <p style="color:var(--muted);font-size:13.5px;">3D 图中的连线表示词条间的交叉引用,粒子的流动方向即引用方向;点的大小表示被引用的多少。左键拖动旋转视角,滚轮缩放,拖动节点可重新排布。数据与 README、词条文件同源,由 <code>npm run site</code> 生成。</p>
+    <p style="color:var(--muted);font-size:13.5px;">3D 图中的节点颜色代表所属章节,连线表示词条间的交叉引用,粒子的流动方向即引用方向;点的大小表示被引用的多少。左键拖动旋转视角,滚轮缩放,拖动节点可重新排布;点击节点后其余节点会向它聚拢。数据与 README、词条文件同源,由 <code>npm run site</code> 生成。</p>
     <button class="btn" onclick="document.getElementById('infoOverlay').classList.remove('show')">关闭</button>
   </div>
 </div>
 <div id="toast"></div>
 <script id="data" type="application/json">${dataJson}</script>
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://esm.sh/three@0.180.0",
-    "3d-force-graph": "https://esm.sh/3d-force-graph@1.79.0?deps=three@0.180.0"
-  }
-}
-</script>
+<script src="vendor/three.min.js"></script>
+<script src="vendor/3d-force-graph.min.js"></script>
 <script type="module">
-import * as THREE from "three";
-import ForceGraph3D from "3d-force-graph";
 (function () {
   var DATA = JSON.parse(document.getElementById("data").textContent);
   var TERMS = DATA.terms;
@@ -429,13 +433,20 @@ import ForceGraph3D from "3d-force-graph";
   var current = null;
   var collapsed = true;
   var neighbors = {};
+  var searchFilter = null; // map of visible node ids while searching
+
+  /* ---------- grey palette (reference-site aesthetic) ---------- */
 
   /* ---------- 3D graph ---------- */
   var wrap = document.getElementById("graphWrap");
   var nodes = GRAPH.nodes.map(function (n) {
-    return { id: n.id, name: n.name, degree: n.degree };
+    return { id: n.id, name: n.name, degree: n.degree, section: TERMS[n.id].section };
   });
   var links = GRAPH.edges.map(function (e) { return { source: e[0], target: e[1] }; });
+
+  function isHidden(n) {
+    return !!searchFilter && !searchFilter[n.id];
+  }
 
   function refreshChains() {
     Graph.nodeColor(Graph.nodeColor());
@@ -444,6 +455,9 @@ import ForceGraph3D from "3d-force-graph";
     Graph.linkWidth(Graph.linkWidth());
     Graph.linkDirectionalParticles(Graph.linkDirectionalParticles());
     Graph.nodeThreeObject(Graph.nodeThreeObject());
+    if (typeof Graph.nodeVisibility === "function") {
+      Graph.nodeVisibility(function (n) { return !isHidden(n); });
+    }
   }
 
   var labelCache = {};
@@ -452,7 +466,7 @@ import ForceGraph3D from "3d-force-graph";
     if (labelCache[text]) return labelCache[text];
     var canvas = document.createElement("canvas");
     var ctx = canvas.getContext("2d");
-    var font = '600 34px ui-monospace, Consolas, monospace';
+    var font = "600 34px ui-monospace, Consolas, monospace";
     ctx.font = font;
     var w = Math.ceil(ctx.measureText(text).width) + 24;
     canvas.width = w; canvas.height = 56;
@@ -460,7 +474,7 @@ import ForceGraph3D from "3d-force-graph";
     ctx.font = font;
     ctx.fillStyle = "rgba(0,0,0,0)";
     ctx.fillRect(0, 0, w, 56);
-    ctx.fillStyle = "rgba(90,86,80,0.95)";
+    ctx.fillStyle = "rgba(105,101,94,0.95)";
     ctx.textBaseline = "middle";
     ctx.fillText(text, 12, 30);
     var texture = new THREE.CanvasTexture(canvas);
@@ -472,50 +486,69 @@ import ForceGraph3D from "3d-force-graph";
     return sprite;
   }
 
+  function baseVal(n) { return 2 + Math.min(n.degree, 9) * 1.1; }
+
   var Graph = ForceGraph3D()(document.getElementById("graph"))
     .width(wrap.clientWidth)
     .height(wrap.clientHeight)
     .graphData({ nodes: nodes, links: links })
     .backgroundColor("rgba(0,0,0,0)")
     .showNavInfo(false)
+    .nodeRelSize(3.2)
     .nodeColor(function (n) {
-      if (!current) return "rgba(110,106,100,0.9)";
-      if (n.id === current.index) return "#e08a4e";
-      if (neighbors[n.id]) return "rgba(74,72,68,0.95)";
-      return "rgba(110,106,100,0.14)";
+      if (isHidden(n)) return "rgba(0,0,0,0)";
+      if (current && n.id === current.index) return "#2f2d29";
+      if (current && neighbors[n.id]) return "rgba(74,72,68,0.92)";
+      if (searchFilter && searchFilter[n.id]) return "rgba(58,56,51,0.9)";
+      return "rgba(74,72,68,0.22)";
     })
     .nodeVal(function (n) {
-      var base = 2 + Math.min(n.degree, 9) * 1.1;
-      return n.id === (current && current.index) ? base * 1.6 : base;
+      if (isHidden(n)) return 0.001;
+      var v = baseVal(n);
+      return current && n.id === current.index ? v * 2 : v;
     })
-    .nodeLabel(function (n) { return n.name; })
-    .nodeRelSize(3.2)
+    .nodeLabel(function (n) { return isHidden(n) ? null : n.name; })
     .nodeThreeObjectExtend(true)
     .nodeThreeObject(function (n) {
-      if (!current) return null;
-      var on = n.id === current.index || neighbors[n.id];
+      if (isHidden(n)) return null;
+      var on = current && (n.id === current.index || neighbors[n.id]);
+      if (searchFilter) on = !!searchFilter[n.id];
       if (!on) return null;
       var sprite = makeLabel(n.name.toUpperCase());
       if (!sprite) return null;
       var s = sprite.clone();
-      var r = 2 + Math.min(n.degree, 9) * 1.1;
-      s.position.set(0, (n.id === current.index ? r * 1.6 : r) * 3.2 + 6, 0);
+      var r = current && n.id === current.index ? baseVal(n) * 1.6 : baseVal(n);
+      s.position.set(0, r * 3.2 + 6, 0);
       return s;
     })
     .linkColor(function (l) {
-      return isHot(l) ? "rgba(224,138,78,0.85)" : "rgba(140,136,128,0.18)";
+      var s = typeof l.source === "object" ? l.source.id : l.source;
+      var t = typeof l.target === "object" ? l.target.id : l.target;
+      if (searchFilter && (!searchFilter[s] || !searchFilter[t])) return "rgba(0,0,0,0)";
+      return isHot(l) ? "rgba(90,86,80,0.85)" : "rgba(140,136,128,0.22)";
     })
-    .linkWidth(function (l) { return isHot(l) ? 1.5 : 0; })
+    .linkWidth(function (l) { return isHot(l) ? 1.2 : 0; })
+    .linkCurvature(0)
     .linkOpacity(0.5)
-    .linkDirectionalParticles(function (l) { return isHot(l) ? 4 : 0; })
-    .linkDirectionalParticleSpeed(0.007)
-    .linkDirectionalParticleWidth(2)
-    .onNodeClick(function (n) { select(TERMS[n.id], true); })
+    .linkDirectionalParticles(function (l) {
+      var s = typeof l.source === "object" ? l.source.id : l.source;
+      var t = typeof l.target === "object" ? l.target.id : l.target;
+      if (searchFilter && (!searchFilter[s] || !searchFilter[t])) return 0;
+      return isHot(l) ? 4 : 0;
+    })
+    .linkDirectionalParticleSpeed(0.008)
+    .linkDirectionalParticleWidth(2.4)
+    .onNodeClick(function (n) { select(TERMS[n.id], true, true); })
     .onEngineStop(function () {
       if (!fitted) { fitted = true; Graph.zoomToFit(600, 60); }
+      if (pendingGather && current) {
+        pendingGather = false;
+        gatherAround(current.index);
+      }
     });
 
   var fitted = false;
+  var pendingGather = false;
 
   function isHot(l) {
     if (!current) return false;
@@ -536,6 +569,74 @@ import ForceGraph3D from "3d-force-graph";
   window.addEventListener("resize", function () {
     Graph.width(wrap.clientWidth).height(wrap.clientHeight);
   });
+
+  /* ---------- auto-rotate & gather tween ---------- */
+  var autoRotating = true;
+  function stopAutoRotate() {
+    if (!autoRotating) return;
+    autoRotating = false;
+    try { Graph.controls().autoRotate = false; } catch (e) {}
+  }
+  try {
+    Graph.controls().autoRotate = true;
+    Graph.controls().autoRotateSpeed = 0.5;
+  } catch (e) {}
+  ["pointerdown", "wheel"].forEach(function (ev) {
+    document.getElementById("graph").addEventListener(ev, stopAutoRotate, { once: true, passive: true });
+  });
+
+  var tweenId = null;
+  function fitCluster(selIdx) {
+    var selN = nodes[selIdx];
+    var R = 190;
+    var cam = Graph.cameraPosition();
+    var dx = cam.x - selN.x, dy = cam.y - selN.y, dz = cam.z - selN.z;
+    var d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+    var fov = (Graph.camera().fov || 40) * Math.PI / 180;
+    var dist = (R / Math.tan(fov / 2)) * 1.05;
+    Graph.cameraPosition(
+      { x: selN.x + (dx / d) * dist, y: selN.y + (dy / d) * dist, z: selN.z + (dz / d) * dist },
+      { x: selN.x, y: selN.y, z: selN.z },
+      600
+    );
+  }
+  function gatherAround(selIdx) {
+    stopAutoRotate();
+    var selN = nodes[selIdx];
+    if (selN.x === undefined) { pendingGather = true; return; } // engine has not placed nodes yet
+    var sx = selN.x, sy = selN.y, sz = selN.z;
+    var starts = nodes.map(function (n) { return [n.x, n.y, n.z]; });
+    var targets = nodes.map(function (n, i) {
+      if (i === selIdx) return [sx, sy, sz];
+      var dx = n.x - sx, dy = n.y - sy, dz = n.z - sz;
+      var d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+      var r = (neighbors[i] ? 60 : 150) + (Math.random() - 0.5) * 24;
+      return [sx + (dx / d) * r, sy + (dy / d) * r, sz + (dz / d) * r];
+    });
+    // Disable d3 forces so nodes stay where the tween puts them, then reheat
+    // the engine: while ticks run, node.x changes sync to the render meshes
+    // (vendor 1.73.x has no engineStop; without reheat the sync pipeline is
+    // dead once alpha converges and the gather would be invisible).
+    try {
+      Graph.d3Force("charge", null);
+      Graph.d3Force("link", null);
+      Graph.d3Force("center", null);
+      Graph.d3ReheatSimulation();
+    } catch (e) {}
+    if (tweenId) cancelAnimationFrame(tweenId);
+    var t0 = performance.now(), D = 900;
+    (function step() {
+      var k = Math.min(1, (performance.now() - t0) / D);
+      var e = 1 - Math.pow(1 - k, 3); // easeOutCubic
+      nodes.forEach(function (n, i) {
+        n.x = starts[i][0] + (targets[i][0] - starts[i][0]) * e;
+        n.y = starts[i][1] + (targets[i][1] - starts[i][1]) * e;
+        n.z = starts[i][2] + (targets[i][2] - starts[i][2]) * e;
+      });
+      if (k < 1) { tweenId = requestAnimationFrame(step); }
+      else { tweenId = null; fitCluster(selIdx); }
+    })();
+  }
 
   /* ---------- panel ---------- */
   function esc(s) {
@@ -583,7 +684,7 @@ import ForceGraph3D from "3d-force-graph";
       navigator.clipboard.writeText(url).then(function () { toast("链接已复制"); });
     });
     panelInner.querySelectorAll(".chip").forEach(function (chip) {
-      chip.addEventListener("click", function () { select(bySlug[chip.dataset.slug], true); });
+      chip.addEventListener("click", function () { select(bySlug[chip.dataset.slug], true, true); });
     });
     panelInner.querySelectorAll("#panelInner .def a, #usageBubbles a").forEach(function (a) {
       var m = (a.getAttribute("href") || "").match(/^#term=(.+)$/);
@@ -591,7 +692,7 @@ import ForceGraph3D from "3d-force-graph";
       var name = decodeURIComponent(m[1]);
       var target = TERMS.find(function (x) { return x.name === name; });
       if (target) {
-        a.addEventListener("click", function (ev) { ev.preventDefault(); select(target, true); });
+        a.addEventListener("click", function (ev) { ev.preventDefault(); select(target, true, true); });
       }
     });
     collapsed = true;
@@ -604,7 +705,7 @@ import ForceGraph3D from "3d-force-graph";
   }
 
   /* ---------- selection ---------- */
-  function select(t, push) {
+  function select(t, push, gather) {
     current = t;
     collapsed = true;
     neighbors = computeNeighbors(t.index);
@@ -612,61 +713,55 @@ import ForceGraph3D from "3d-force-graph";
     refreshChains();
     if (push) history.replaceState(null, "", "?term=" + t.slug);
     document.getElementById("panel").scrollTop = 0;
+    if (gather) {
+      try { gatherAround(t.index); } catch (e) {}
+    }
   }
   function step(delta) {
     if (!current) return;
     var i = (current.index + delta + TERMS.length) % TERMS.length;
-    select(TERMS[i], true);
+    select(TERMS[i], true, true);
   }
   document.getElementById("prevBtn").addEventListener("click", function () { step(-1); });
   document.getElementById("nextBtn").addEventListener("click", function () { step(1); });
 
-  /* ---------- search ---------- */
-  var overlay = document.getElementById("searchOverlay");
+  /* ---------- search: inline bar filters the graph live ---------- */
   var input = document.getElementById("searchInput");
-  var list = document.getElementById("searchList");
-  function openSearch() {
-    overlay.classList.add("show");
-    input.value = "";
-    renderList("");
-    input.focus();
-  }
-  function renderList(q) {
+  var clearBtn = document.getElementById("clearBtn");
+  var countEl = document.getElementById("searchCount");
+  function nameMatches(q) {
     q = q.trim().toLowerCase();
-    var hits = TERMS.map(function (t) {
-      var name = t.name.toLowerCase(), desc = t.description.toLowerCase();
-      var score = 4;
-      if (name.indexOf(q) !== -1) score = 0;
-      else if (desc.indexOf(q) !== -1) score = 1;
-      else if (t.bodyMd.toLowerCase().indexOf(q) !== -1) score = 2;
-      return { t: t, score: score };
-    }).filter(function (h) { return !q || h.score < 4; })
-      .sort(function (a, b) {
-        return a.score - b.score || a.t.name.localeCompare(b.t.name);
-      })
-      .slice(0, 12);
-    list.innerHTML = hits.map(function (h) {
-      var t = h.t;
-      return '<li data-slug="' + t.slug + '"><div class="n">' + esc(t.name) + '</div><div class="d">' + esc(t.description) + "</div></li>";
-    }).join("");
-    Array.prototype.forEach.call(list.children, function (li) {
-      li.addEventListener("click", function () {
-        overlay.classList.remove("show");
-        select(bySlug[li.dataset.slug], true);
-      });
+    return TERMS.filter(function (t) {
+      return t.name.toLowerCase().indexOf(q) !== -1;
     });
   }
-  document.getElementById("searchBtn").addEventListener("click", openSearch);
-  input.addEventListener("input", function () { renderList(input.value); });
-  input.addEventListener("keydown", function (e) {
-    if (e.key === "Escape") overlay.classList.remove("show");
-    if (e.key === "Enter") {
-      var first = list.querySelector("li");
-      if (first) { overlay.classList.remove("show"); select(bySlug[first.dataset.slug], true); }
+  function updateFilter(q) {
+    q = (q || "").trim().toLowerCase();
+    clearBtn.style.display = q ? "block" : "none";
+    if (!q) {
+      searchFilter = null;
+      countEl.style.display = "none";
+      refreshChains();
+      return;
     }
+    var matches = nameMatches(q);
+    var vis = {};
+    matches.forEach(function (t) { vis[t.index] = 1; });
+    searchFilter = vis;
+    countEl.textContent = matches.length + (matches.length === 1 ? " term" : " terms");
+    countEl.style.display = "block";
+    refreshChains();
+  }
+  input.addEventListener("input", function () { updateFilter(input.value); });
+  clearBtn.addEventListener("click", function () {
+    input.value = ""; updateFilter(""); input.focus();
   });
-  overlay.addEventListener("click", function (e) {
-    if (e.target === overlay) overlay.classList.remove("show");
+  input.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") { input.value = ""; updateFilter(""); input.blur(); }
+    if (e.key === "Enter") {
+      var first = nameMatches(input.value)[0];
+      if (first) select(first, true, true);
+    }
   });
   document.getElementById("infoBtn").addEventListener("click", function () {
     document.getElementById("infoOverlay").classList.add("show");
@@ -675,10 +770,9 @@ import ForceGraph3D from "3d-force-graph";
     if (e.target.id === "infoOverlay") e.target.classList.remove("show");
   });
   document.addEventListener("keydown", function (e) {
-    if (e.key === "/" && document.activeElement.tagName !== "INPUT") {
-      e.preventDefault(); openSearch();
+    if (e.key === "/" && document.activeElement !== input) {
+      e.preventDefault(); input.focus(); input.select();
     }
-    if (e.key === "Escape") overlay.classList.remove("show");
   });
 
   /* ---------- deep link & boot ---------- */
@@ -691,12 +785,13 @@ import ForceGraph3D from "3d-force-graph";
   }
   window.addEventListener("hashchange", function () {
     var t = fromUrl();
-    if (t && t !== current) select(t, false);
+    if (t && t !== current) select(t, false, true);
   });
 
-  var initial = fromUrl() || TERMS[0];
-  select(initial, true);
-  setTimeout(function () { Graph.zoomToFit(500, 60); }, 1800);
+  var initial = fromUrl();
+  if (initial) select(initial, true, true);
+  else select(TERMS[0], true, false); // spread view + auto-rotate, like the original site
+  setTimeout(function () { Graph.zoomToFit(500, 60); }, 1600);
 })();
 </script>
 </body>
@@ -704,6 +799,14 @@ import ForceGraph3D from "3d-force-graph";
 `;
 
 mkdirSync(OUT_DIR, { recursive: true });
+const vendorOut = join(OUT_DIR, "vendor");
+mkdirSync(vendorOut, { recursive: true });
+for (const f of VENDOR_FILES) {
+  const src = join(VENDOR_SRC, f);
+  if (!existsSync(src))
+    fail(`Missing vendored file ${src} — see internal/vendor/README`);
+  copyFileSync(src, join(vendorOut, f));
+}
 writeFileSync(join(OUT_DIR, "index.html"), html);
 console.log(
   `site/index.html generated: ${terms.length} terms, ${sections.length} sections, ${graph.edges.length} edges`
