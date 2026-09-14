@@ -1,0 +1,710 @@
+#!/usr/bin/env -S npx tsx
+// Generate a self-contained static site (3D force graph + detail panel) from
+// internal/Curriculum.md + dictionary/*.md. Output: site/index.html.
+// The 3D graph uses 3d-force-graph loaded from CDN.
+
+import { readFileSync, writeFileSync, mkdirSync, readdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+import { Marked } from "marked";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const ROOT = dirname(HERE);
+const CURRICULUM = join(HERE, "Curriculum.md");
+const DICT_DIR = join(ROOT, "dictionary");
+const OUT_DIR = join(ROOT, "site");
+
+const SECTION_RE = /^## Section \d+ — .+$/;
+const BULLET_RE = /^- (.+)$/;
+
+type Term = {
+  name: string;
+  slug: string;
+  section: number;
+  description: string;
+  links: string[];
+  usage: string[]; // html bubbles
+  firstPara: string; // html
+  restHtml: string; // html after first paragraph
+  bodyMd: string; // raw markdown
+};
+
+function fail(msg: string): never {
+  console.error(msg);
+  process.exit(1);
+}
+
+// Working copies may have CRLF line endings (git autocrlf); normalize to LF.
+function readLF(path: string): string {
+  return readFileSync(path, "utf8").replace(/\r\n/g, "\n");
+}
+
+function parseCurriculum(text: string): { heading: string; terms: string[] }[] {
+  const sections: { heading: string; terms: string[] }[] = [];
+  let current: { heading: string; terms: string[] } | null = null;
+
+  text.split("\n").forEach((raw, idx) => {
+    const lineNo = idx + 1;
+    const line = raw.trimEnd();
+    if (line === "") return;
+
+    if (line.startsWith("## ")) {
+      if (!SECTION_RE.test(line)) {
+        fail(
+          `Curriculum.md:${lineNo}: section heading must match "## Section N — Title" (em-dash required): ${line}`
+        );
+      }
+      current = { heading: line.slice(3), terms: [] };
+      sections.push(current);
+      return;
+    }
+
+    if (line.startsWith("- ")) {
+      if (!current)
+        fail(`Curriculum.md:${lineNo}: bullet before any section heading`);
+      const m = line.match(BULLET_RE);
+      if (!m || !m[1])
+        fail(`Curriculum.md:${lineNo}: malformed bullet: ${line}`);
+      current.terms.push(m[1]);
+      return;
+    }
+
+    fail(
+      `Curriculum.md:${lineNo}: only "## Section N — Title" headings and "- Term" bullets are allowed: ${line}`
+    );
+  });
+
+  return sections;
+}
+
+function slugify(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function parseFrontmatter(body: string): { description: string; rest: string } {
+  if (!body.startsWith("---\n")) return { description: "", rest: body };
+  const end = body.indexOf("\n---\n", 4);
+  if (end === -1) return { description: "", rest: body };
+  const fm = body.slice(4, end);
+  const rest = body.slice(end + 5).replace(/^\n+/, "");
+  const m = fm.match(/^description: ?(.*)$/m);
+  let description = m?.[1] ?? "";
+  if (
+    (description.startsWith('"') && description.endsWith('"')) ||
+    (description.startsWith("'") && description.endsWith("'"))
+  ) {
+    description = description.slice(1, -1);
+  }
+  return { description, rest };
+}
+
+const marked = new Marked({ gfm: true });
+const renderMd = (md: string) => marked.parse(md) as string;
+
+function rewriteLinks(html: string): string {
+  return html.replace(/href="\.\/([^"]+)\.md"/g, (_, target: string) => {
+    return `href="#term=${target}"`;
+  });
+}
+
+function splitUsage(md: string): { def: string; usage: string[] } {
+  const lines = md.split("\n");
+  const idx = lines.findIndex((l) => /^_Usage:_\s*$/.test(l.trim()));
+  if (idx === -1) return { def: md, usage: [] };
+  const def = lines.slice(0, idx).join("\n").trimEnd();
+  const usageMd = lines
+    .slice(idx + 1)
+    .join("\n")
+    .trim();
+  const usage = usageMd
+    .split(/\n\s*\n/)
+    .map((p) => rewriteLinks(renderMd(p.trim())).trim())
+    .filter(Boolean);
+  return { def, usage };
+}
+
+const allNames = new Set(
+  readdirSync(DICT_DIR)
+    .filter((n) => n.endsWith(".md"))
+    .map((n) => n.slice(0, -3))
+);
+
+function extractLinks(md: string): string[] {
+  const links = new Set<string>();
+  for (const m of md.matchAll(/\]\(\.\/([^)]+)\.md\)/g)) {
+    const name = decodeURIComponent(m[1]);
+    if (allNames.has(name)) links.add(name);
+  }
+  return [...links];
+}
+
+function build() {
+  const curriculum = parseCurriculum(readLF(CURRICULUM));
+  const seen = new Set<string>();
+  const terms: Term[] = [];
+
+  curriculum.forEach((section, si) => {
+    for (const name of section.terms) {
+      if (seen.has(name)) fail(`Curriculum.md: duplicate term "${name}"`);
+      seen.add(name);
+      const entryPath = join(DICT_DIR, `${name}.md`);
+      let raw: string;
+      try {
+        raw = readLF(entryPath);
+      } catch {
+        fail(
+          `Curriculum.md references "${name}" but ${entryPath} does not exist`
+        );
+      }
+      const { description, rest } = parseFrontmatter(raw);
+      const { def, usage } = splitUsage(rest);
+      const firstBlock = def.trim().split(/\n\s*\n/)[0] ?? "";
+      const restMd = def.trim().slice(firstBlock.length).trim();
+      terms.push({
+        name,
+        slug: slugify(name),
+        section: si,
+        description,
+        links: extractLinks(rest),
+        usage,
+        firstPara: rewriteLinks(renderMd(firstBlock)),
+        restHtml: rewriteLinks(renderMd(restMd)),
+        bodyMd: rest.trim(),
+      });
+    }
+  });
+
+  const onDisk = new Set([...allNames]);
+  const orphans = [...onDisk].filter((t) => !seen.has(t)).sort();
+  if (orphans.length)
+    fail(
+      `dictionary/ entries not referenced by Curriculum.md: ${orphans.join(", ")}`
+    );
+
+  const index = new Map(terms.map((t, i) => [t.name, i]));
+  const edgeSet = new Set<string>();
+  const edges: [number, number][] = [];
+  terms.forEach((t, i) => {
+    t.links.forEach((target) => {
+      const j = index.get(target);
+      if (j === undefined || j === i) return;
+      const key = i < j ? `${i}:${j}` : `${j}:${i}`;
+      if (!edgeSet.has(key)) {
+        edgeSet.add(key);
+        edges.push(i < j ? [i, j] : [j, i]);
+      }
+    });
+  });
+
+  const graph = {
+    nodes: terms.map((t, i) => ({
+      name: t.name,
+      slug: t.slug,
+      degree: 0,
+      id: i,
+    })),
+    edges,
+  };
+  terms.forEach((t, i) => {
+    graph.nodes[i].degree = edges.filter(
+      (e) => e[0] === i || e[1] === i
+    ).length;
+  });
+
+  return { sections: curriculum, terms, graph };
+}
+
+function escapeForScriptTag(json: string): string {
+  return json.replace(/<\//g, "<\\/");
+}
+
+const { sections, terms, graph } = build();
+const dataJson = escapeForScriptTag(
+  JSON.stringify({
+    sections: sections.map((s) => s.heading),
+    terms: terms.map((t) => ({
+      name: t.name,
+      slug: t.slug,
+      section: t.section,
+      description: t.description,
+      links: t.links,
+      usage: t.usage,
+      firstPara: t.firstPara,
+      restHtml: t.restHtml,
+      bodyMd: t.bodyMd,
+    })),
+    graph,
+  })
+);
+
+const html = `<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI 编程词典</title>
+<style>
+  :root {
+    --bg: #edecea; --panel-bg: #faf9f7; --fg: #1a1a18; --muted: #8a867f;
+    --border: #dcd9d3; --accent: #b3541e; --chip-border: #c9c5bd; --bubble-dark: #26241f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141311; --panel-bg: #1c1b18; --fg: #e8e5e0; --muted: #96918a;
+      --border: #2c2a26; --accent: #e08a4e; --chip-border: #3a3833; --bubble-dark: #e8e5e0;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg); overflow: hidden;
+    font: 15.5px/1.75 -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+  }
+  #app { display: flex; height: 100vh; }
+  #graphWrap { position: relative; flex: 1 1 58%; min-width: 0; background: var(--bg); }
+  #graph { width: 100%; height: 100%; }
+  #hint {
+    position: absolute; bottom: 16px; left: 20px; color: var(--muted);
+    font-size: 12px; user-select: none; pointer-events: none;
+  }
+  .fab {
+    position: absolute; z-index: 5; width: 44px; height: 44px; border-radius: 50%;
+    border: 1px solid var(--border); background: var(--panel-bg); color: var(--fg);
+    font-size: 17px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  }
+  .fab:hover { border-color: var(--muted); }
+  #searchBtn { top: 20px; left: 20px; }
+  #infoBtn { top: 20px; right: 20px; font-style: italic; font-family: Georgia, serif; }
+
+  #panel {
+    flex: 0 0 42%; max-width: 560px; min-width: 380px; overflow-y: auto;
+    background: var(--panel-bg); border-left: 1px solid var(--border);
+    display: flex; flex-direction: column;
+  }
+  #panelInner { padding: 28px 32px 8px; flex: 1; }
+  .kicker {
+    font: 600 11px ui-monospace, Consolas, monospace; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--muted); margin: 26px 0 10px;
+  }
+  #termTitle { margin: 6px 0 4px; font-size: 30px; letter-spacing: -0.4px; }
+  #termDesc { color: var(--muted); margin: 0 0 6px; }
+  .bubble {
+    max-width: 88%; padding: 12px 16px; border-radius: 14px; margin: 6px 0;
+    font-size: 15px;
+  }
+  .bubble.q { background: transparent; border: 1px solid var(--border); }
+  .bubble.a { background: var(--bubble-dark); color: var(--panel-bg); margin-left: auto; }
+  @media (prefers-color-scheme: dark) { .bubble.a { color: #171614; } }
+  .bubble p { margin: 0; }
+  .bubble a { color: inherit; text-decoration: underline; cursor: pointer; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    border: 1px solid var(--chip-border); background: transparent; color: var(--fg);
+    border-radius: 999px; padding: 5px 14px; font: inherit; font-size: 14px;
+    cursor: pointer;
+  }
+  .chip:hover { border-color: var(--fg); }
+  .def p { margin: 0.85em 0; }
+  .def a { color: var(--accent); text-decoration: none; cursor: pointer; }
+  .def a:hover { text-decoration: underline; }
+  .def code {
+    background: rgba(128,128,128,0.15); padding: 1px 6px; border-radius: 4px;
+    font-size: 0.88em; font-family: ui-monospace, Consolas, monospace;
+  }
+  .def table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 14px; }
+  .def th, .def td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+  .def th { background: rgba(128,128,128,0.08); }
+  .def li { margin: 0.3em 0; }
+  .def .rest[hidden] { display: none; }
+  #readMore {
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    font: 600 11px ui-monospace, Consolas, monospace; letter-spacing: 0.18em;
+    text-transform: uppercase; padding: 4px 0;
+  }
+  #readMore:hover { color: var(--fg); }
+  .actions { display: flex; gap: 10px; margin: 22px 0; flex-wrap: wrap; }
+  .btn {
+    border: 1px solid var(--chip-border); background: transparent; color: var(--fg);
+    border-radius: 999px; padding: 9px 18px; font: inherit; font-size: 14px; cursor: pointer;
+  }
+  .btn.primary { background: var(--fg); color: var(--panel-bg); border-color: var(--fg); }
+  .btn:hover { border-color: var(--fg); }
+  #prevNext {
+    position: sticky; bottom: 0; display: flex; justify-content: space-between;
+    background: var(--panel-bg); border-top: 1px solid var(--border); padding: 10px 32px;
+  }
+  #prevNext button {
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    font: 600 12px ui-monospace, Consolas, monospace; letter-spacing: 0.18em;
+    text-transform: uppercase; padding: 8px 0;
+  }
+  #prevNext button:hover { color: var(--fg); }
+  #toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: var(--fg); color: var(--panel-bg); padding: 8px 18px;
+    border-radius: 999px; font-size: 14px; opacity: 0; transition: opacity 0.25s;
+    pointer-events: none; z-index: 30;
+  }
+  #toast.show { opacity: 1; }
+  .overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: none;
+    align-items: flex-start; justify-content: center; padding-top: 12vh; z-index: 10;
+  }
+  .overlay.show { display: flex; }
+  .sheet {
+    background: var(--panel-bg); border: 1px solid var(--border); border-radius: 14px;
+    width: min(560px, 90vw); max-height: 70vh; overflow: auto; padding: 18px;
+  }
+  #searchInput {
+    width: 100%; padding: 12px 14px; font: inherit; color: var(--fg);
+    background: var(--bg); border: 1px solid var(--border); border-radius: 10px; outline: none;
+  }
+  #searchList { list-style: none; margin: 10px 0 0; padding: 0; }
+  #searchList li { padding: 10px 10px; border-radius: 8px; cursor: pointer; }
+  #searchList li:hover, #searchList li.active { background: rgba(128,128,128,0.12); }
+  #searchList .n { font-weight: 700; }
+  #searchList .d { color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 860px) {
+    body { overflow: auto; }
+    #app { flex-direction: column; height: auto; }
+    #graphWrap { flex: none; height: 52vh; }
+    #panel { flex: none; max-width: none; min-width: 0; border-left: none; border-top: 1px solid var(--border); overflow: visible; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="graphWrap">
+    <div id="graph"></div>
+    <button id="searchBtn" class="fab" title="搜索 (/)">&#x1F50D;</button>
+    <button id="infoBtn" class="fab" title="关于">i</button>
+    <div id="hint">拖动旋转 · 滚轮缩放 · 拖节点移动 · 点击节点查看</div>
+  </div>
+  <div id="panel">
+    <div id="panelInner"></div>
+    <div id="prevNext">
+      <button id="prevBtn">&#x2190; Prev</button>
+      <button id="nextBtn">Next &#x2192;</button>
+    </div>
+  </div>
+</div>
+<div id="searchOverlay" class="overlay">
+  <div class="sheet">
+    <input id="searchInput" type="search" placeholder="搜索术语或正文… (Esc 关闭)" autocomplete="off">
+    <ul id="searchList"></ul>
+  </div>
+</div>
+<div id="infoOverlay" class="overlay">
+  <div class="sheet">
+    <h2 style="margin-top:0;">AI 编程词典</h2>
+    <p>把 AI 编程的词汇翻译成大白话。中文版译自 Matt Pocock 的 AI Coding Dictionary(aihero.dev),词条结构与概念归原作者。</p>
+    <p style="color:var(--muted);font-size:13.5px;">3D 图中的连线表示词条间的交叉引用,粒子的流动方向即引用方向;点的大小表示被引用的多少。左键拖动旋转视角,滚轮缩放,拖动节点可重新排布。数据与 README、词条文件同源,由 <code>npm run site</code> 生成。</p>
+    <button class="btn" onclick="document.getElementById('infoOverlay').classList.remove('show')">关闭</button>
+  </div>
+</div>
+<div id="toast"></div>
+<script id="data" type="application/json">${dataJson}</script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://esm.sh/three@0.180.0",
+    "3d-force-graph": "https://esm.sh/3d-force-graph@1.79.0?deps=three@0.180.0"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from "three";
+import ForceGraph3D from "3d-force-graph";
+(function () {
+  var DATA = JSON.parse(document.getElementById("data").textContent);
+  var TERMS = DATA.terms;
+  var GRAPH = DATA.graph;
+  var bySlug = {};
+  TERMS.forEach(function (t, i) { t.index = i; bySlug[t.slug] = t; });
+
+  var panelInner = document.getElementById("panelInner");
+  var current = null;
+  var collapsed = true;
+  var neighbors = {};
+
+  /* ---------- 3D graph ---------- */
+  var wrap = document.getElementById("graphWrap");
+  var nodes = GRAPH.nodes.map(function (n) {
+    return { id: n.id, name: n.name, degree: n.degree };
+  });
+  var links = GRAPH.edges.map(function (e) { return { source: e[0], target: e[1] }; });
+
+  function refreshChains() {
+    Graph.nodeColor(Graph.nodeColor());
+    Graph.nodeVal(Graph.nodeVal());
+    Graph.linkColor(Graph.linkColor());
+    Graph.linkWidth(Graph.linkWidth());
+    Graph.linkDirectionalParticles(Graph.linkDirectionalParticles());
+    Graph.nodeThreeObject(Graph.nodeThreeObject());
+  }
+
+  var labelCache = {};
+  function makeLabel(text) {
+    if (typeof THREE === "undefined") return null;
+    if (labelCache[text]) return labelCache[text];
+    var canvas = document.createElement("canvas");
+    var ctx = canvas.getContext("2d");
+    var font = '600 34px ui-monospace, Consolas, monospace';
+    ctx.font = font;
+    var w = Math.ceil(ctx.measureText(text).width) + 24;
+    canvas.width = w; canvas.height = 56;
+    ctx = canvas.getContext("2d");
+    ctx.font = font;
+    ctx.fillStyle = "rgba(0,0,0,0)";
+    ctx.fillRect(0, 0, w, 56);
+    ctx.fillStyle = "rgba(90,86,80,0.95)";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, 12, 30);
+    var texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+    var material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
+    var sprite = new THREE.Sprite(material);
+    sprite.scale.set(w / 14, 56 / 14, 1);
+    labelCache[text] = sprite;
+    return sprite;
+  }
+
+  var Graph = ForceGraph3D()(document.getElementById("graph"))
+    .width(wrap.clientWidth)
+    .height(wrap.clientHeight)
+    .graphData({ nodes: nodes, links: links })
+    .backgroundColor("rgba(0,0,0,0)")
+    .showNavInfo(false)
+    .nodeColor(function (n) {
+      if (!current) return "rgba(110,106,100,0.9)";
+      if (n.id === current.index) return "#e08a4e";
+      if (neighbors[n.id]) return "rgba(74,72,68,0.95)";
+      return "rgba(110,106,100,0.14)";
+    })
+    .nodeVal(function (n) {
+      var base = 2 + Math.min(n.degree, 9) * 1.1;
+      return n.id === (current && current.index) ? base * 1.6 : base;
+    })
+    .nodeLabel(function (n) { return n.name; })
+    .nodeRelSize(3.2)
+    .nodeThreeObjectExtend(true)
+    .nodeThreeObject(function (n) {
+      if (!current) return null;
+      var on = n.id === current.index || neighbors[n.id];
+      if (!on) return null;
+      var sprite = makeLabel(n.name.toUpperCase());
+      if (!sprite) return null;
+      var s = sprite.clone();
+      var r = 2 + Math.min(n.degree, 9) * 1.1;
+      s.position.set(0, (n.id === current.index ? r * 1.6 : r) * 3.2 + 6, 0);
+      return s;
+    })
+    .linkColor(function (l) {
+      return isHot(l) ? "rgba(224,138,78,0.85)" : "rgba(140,136,128,0.18)";
+    })
+    .linkWidth(function (l) { return isHot(l) ? 1.5 : 0; })
+    .linkOpacity(0.5)
+    .linkDirectionalParticles(function (l) { return isHot(l) ? 4 : 0; })
+    .linkDirectionalParticleSpeed(0.007)
+    .linkDirectionalParticleWidth(2)
+    .onNodeClick(function (n) { select(TERMS[n.id], true); })
+    .onEngineStop(function () {
+      if (!fitted) { fitted = true; Graph.zoomToFit(600, 60); }
+    });
+
+  var fitted = false;
+
+  function isHot(l) {
+    if (!current) return false;
+    var s = typeof l.source === "object" ? l.source.id : l.source;
+    var t = typeof l.target === "object" ? l.target.id : l.target;
+    return s === current.index || t === current.index;
+  }
+
+  function computeNeighbors(i) {
+    var set = {};
+    GRAPH.edges.forEach(function (e) {
+      if (e[0] === i) set[e[1]] = 1;
+      if (e[1] === i) set[e[0]] = 1;
+    });
+    return set;
+  }
+
+  window.addEventListener("resize", function () {
+    Graph.width(wrap.clientWidth).height(wrap.clientHeight);
+  });
+
+  /* ---------- panel ---------- */
+  function esc(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  }
+  function renderPanel(t) {
+    var sortedLinks = t.links.slice().sort(function (a, b) { return a.localeCompare(b); });
+    var chips = sortedLinks.map(function (name) {
+      var target = TERMS.find(function (x) { return x.name === name; });
+      return '<button class="chip" data-slug="' + target.slug + '">' + esc(name) + "</button>";
+    }).join("");
+    var usageHtml = t.usage.map(function (u, i) {
+      return '<div class="bubble ' + (i % 2 ? "a" : "q") + '">' + u + "</div>";
+    }).join("");
+    panelInner.innerHTML =
+      '<div class="kicker">' + esc(DATA.sections[t.section]) + "</div>" +
+      '<h1 id="termTitle">' + esc(t.name) + "</h1>" +
+      '<p id="termDesc">' + esc(t.description) + "</p>" +
+      (usageHtml ? '<div class="kicker">Usage</div><div id="usageBubbles">' + usageHtml + "</div>" : "") +
+      (chips ? '<div class="kicker">Connects to</div><div class="chips">' + chips + "</div>" : "") +
+      '<div class="kicker">Full definition</div>' +
+      '<div class="def"><div>' + t.firstPara + "</div>" +
+      '<div class="rest" id="defRest" hidden>' + t.restHtml + "</div></div>" +
+      '<button id="readMore">Read more &#x2304;</button>' +
+      '<div class="actions">' +
+      '<button class="btn primary" id="copyMdBtn">Copy Markdown</button>' +
+      '<button class="btn" id="shareBtn">Share</button>' +
+      "</div>";
+    bindPanel(t);
+  }
+
+  function bindPanel(t) {
+    var rm = document.getElementById("readMore");
+    rm.addEventListener("click", function () {
+      collapsed = !collapsed;
+      document.getElementById("defRest").hidden = collapsed;
+      rm.innerHTML = collapsed ? "Read more &#x2304;" : "Read less &#x2303;";
+    });
+    document.getElementById("copyMdBtn").addEventListener("click", function () {
+      navigator.clipboard.writeText(t.bodyMd).then(function () { toast("Markdown 已复制"); });
+    });
+    document.getElementById("shareBtn").addEventListener("click", function () {
+      var url = location.origin + location.pathname + "?term=" + t.slug;
+      history.replaceState(null, "", "?term=" + t.slug);
+      navigator.clipboard.writeText(url).then(function () { toast("链接已复制"); });
+    });
+    panelInner.querySelectorAll(".chip").forEach(function (chip) {
+      chip.addEventListener("click", function () { select(bySlug[chip.dataset.slug], true); });
+    });
+    panelInner.querySelectorAll("#panelInner .def a, #usageBubbles a").forEach(function (a) {
+      var m = (a.getAttribute("href") || "").match(/^#term=(.+)$/);
+      if (!m) return;
+      var name = decodeURIComponent(m[1]);
+      var target = TERMS.find(function (x) { return x.name === name; });
+      if (target) {
+        a.addEventListener("click", function (ev) { ev.preventDefault(); select(target, true); });
+      }
+    });
+    collapsed = true;
+  }
+
+  function toast(msg) {
+    var el = document.getElementById("toast");
+    el.textContent = msg; el.classList.add("show");
+    setTimeout(function () { el.classList.remove("show"); }, 1600);
+  }
+
+  /* ---------- selection ---------- */
+  function select(t, push) {
+    current = t;
+    collapsed = true;
+    neighbors = computeNeighbors(t.index);
+    renderPanel(t);
+    refreshChains();
+    if (push) history.replaceState(null, "", "?term=" + t.slug);
+    document.getElementById("panel").scrollTop = 0;
+  }
+  function step(delta) {
+    if (!current) return;
+    var i = (current.index + delta + TERMS.length) % TERMS.length;
+    select(TERMS[i], true);
+  }
+  document.getElementById("prevBtn").addEventListener("click", function () { step(-1); });
+  document.getElementById("nextBtn").addEventListener("click", function () { step(1); });
+
+  /* ---------- search ---------- */
+  var overlay = document.getElementById("searchOverlay");
+  var input = document.getElementById("searchInput");
+  var list = document.getElementById("searchList");
+  function openSearch() {
+    overlay.classList.add("show");
+    input.value = "";
+    renderList("");
+    input.focus();
+  }
+  function renderList(q) {
+    q = q.trim().toLowerCase();
+    var hits = TERMS.map(function (t) {
+      var name = t.name.toLowerCase(), desc = t.description.toLowerCase();
+      var score = 4;
+      if (name.indexOf(q) !== -1) score = 0;
+      else if (desc.indexOf(q) !== -1) score = 1;
+      else if (t.bodyMd.toLowerCase().indexOf(q) !== -1) score = 2;
+      return { t: t, score: score };
+    }).filter(function (h) { return !q || h.score < 4; })
+      .sort(function (a, b) {
+        return a.score - b.score || a.t.name.localeCompare(b.t.name);
+      })
+      .slice(0, 12);
+    list.innerHTML = hits.map(function (h) {
+      var t = h.t;
+      return '<li data-slug="' + t.slug + '"><div class="n">' + esc(t.name) + '</div><div class="d">' + esc(t.description) + "</div></li>";
+    }).join("");
+    Array.prototype.forEach.call(list.children, function (li) {
+      li.addEventListener("click", function () {
+        overlay.classList.remove("show");
+        select(bySlug[li.dataset.slug], true);
+      });
+    });
+  }
+  document.getElementById("searchBtn").addEventListener("click", openSearch);
+  input.addEventListener("input", function () { renderList(input.value); });
+  input.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") overlay.classList.remove("show");
+    if (e.key === "Enter") {
+      var first = list.querySelector("li");
+      if (first) { overlay.classList.remove("show"); select(bySlug[first.dataset.slug], true); }
+    }
+  });
+  overlay.addEventListener("click", function (e) {
+    if (e.target === overlay) overlay.classList.remove("show");
+  });
+  document.getElementById("infoBtn").addEventListener("click", function () {
+    document.getElementById("infoOverlay").classList.add("show");
+  });
+  document.getElementById("infoOverlay").addEventListener("click", function (e) {
+    if (e.target.id === "infoOverlay") e.target.classList.remove("show");
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "/" && document.activeElement.tagName !== "INPUT") {
+      e.preventDefault(); openSearch();
+    }
+    if (e.key === "Escape") overlay.classList.remove("show");
+  });
+
+  /* ---------- deep link & boot ---------- */
+  function fromUrl() {
+    var qs = new URLSearchParams(location.search).get("term");
+    var h = (location.hash.match(/^#term=(.+)$/) || [])[1];
+    var slug = qs || h;
+    if (!slug) return null;
+    return bySlug[decodeURIComponent(slug).toLowerCase()] || null;
+  }
+  window.addEventListener("hashchange", function () {
+    var t = fromUrl();
+    if (t && t !== current) select(t, false);
+  });
+
+  var initial = fromUrl() || TERMS[0];
+  select(initial, true);
+  setTimeout(function () { Graph.zoomToFit(500, 60); }, 1800);
+})();
+</script>
+</body>
+</html>
+`;
+
+mkdirSync(OUT_DIR, { recursive: true });
+writeFileSync(join(OUT_DIR, "index.html"), html);
+console.log(
+  `site/index.html generated: ${terms.length} terms, ${sections.length} sections, ${graph.edges.length} edges`
+);

@@ -1,25 +1,25 @@
 ---
-description: The pairing between two tokens — meaningful pairs influence each other more than unrelated ones. A context of N tokens has ~N² of these.
+description: 两个 token 之间的配对——有意义的配对比无关的配对相互影响更强。N 个 token 的上下文约有 N² 个这种关系。
 ---
 
-When predicting each [token](./Token.md), the [model](./Model.md) factors in every other token in the [context](./Context.md) — some heavily, others barely at all. The pairing between two tokens is an **attention relationship**, and meaningful pairs ("her" with "Sarah", or a `getUser()` call with its `function getUser` definition) influence each other more than unrelated ones. A context of N tokens has on the order of N² relationships.
+[模型](./Model.md)在预测每个 [token](./Token.md)(词元)时,会把 [context](./Context.md)(上下文)里的其他每个 token 都纳入考量——有些权重很重,有些几乎为零。两个 token 之间的配对就是一个 **attention relationship**(注意力关系),而有意义的配对("her"与"Sarah"、一次 `getUser()` 调用与它的 `function getUser` 定义)相互影响强于无关的配对。N 个 token 的 context,有约 N² 量级的配对关系。
 
-The pairings are where the model's apparent understanding lives. When it resolves a pronoun, it's because the attention relationship between "her" and "Sarah" is strong. When it calls a function with the right arguments, the relationship between the call site and the definition it read earlier is doing the work. None of this is looked up — it's computed fresh on every [model provider request](./Model%20provider%20request.md), for every pair.
+模型的表面"理解力"就住在这些配对里。它解对一个代词,是因为"her"与"Sarah"之间的 attention relationship 强;它用对参数调用了一个函数,是调用点与它早前读过的定义之间的关系在起作用。这些都不是查出来的——而是在每次 [model provider request](./Model%20provider%20request.md)(模型供应商请求)上、对每一对新鲜算出来的。
 
-The N² figure is worth sitting with, because it grows faster than intuition suggests:
+N² 这个数字值得停下来感受一下,因为它增长得比直觉快:
 
-| Context size   | Pairings (~N²) |
-| -------------- | -------------- |
-| 1,000 tokens   | ~1 million     |
-| 10,000 tokens  | ~100 million   |
-| 100,000 tokens | ~10 billion    |
+| Context 大小  | 配对数(约 N²) |
+| ------------- | ------------- |
+| 1,000 token   | 约 100 万     |
+| 10,000 token  | 约 1 亿       |
+| 100,000 token | 约 100 亿     |
 
-Each pairing is also computed more than once. Models have multiple attention heads — exact counts for frontier models are unpublished, but fifty to a hundred is a reasonable guess — and each head computes its own version of every relationship. So every pairing in the table above is duplicated across every head. That's a lot of pairings.
+而且每个配对还被计算不止一次。模型有多个 attention head(注意力头)——前沿模型的确切数字未公开,五到一百是合理的猜测——每个 head 都独立计算所有关系。上表里的每个配对,都要在每个 head 上再重复一遍。这是很大量的配对。
 
-Only a small number of these relationships matter for any given task. The pairing between your instruction and the code it governs is one of a handful that count; almost everything else in the pool is noise. And the two grow at different rates: the relationships that matter stay roughly constant, while the total pool grows quadratically with context size. At 1,000 tokens, the pairing you care about is one in a million; at 100,000 tokens, it's one in ten billion. This is the arithmetic underneath the [attention budget](./Attention%20budget.md), and [attention degradation](./Attention%20degradation.md) is what it feels like when the relationships that matter get too thin a share.
+对任何一个给定任务,这些关系里只有少数是重要的。你的指令和它所约束的代码之间的配对,是屈指可数的有用配对之一;池子里几乎所有其他东西都是噪音。而且两者增长速度不同:重要的关系大致保持恒定,总池子随 context 大小二次方增长。1,000 token 时,你在乎的配对是百万分之一;100,000 token 时,是百亿分之一。这就是 [attention budget](./Attention%20budget.md)(注意力预算)底下的算术,而 [attention degradation](./Attention%20degradation.md) 就是重要关系的份额被摊得太薄时的体感。
 
 _Usage:_
 
-"It keeps confusing the two `user` symbols across the diff — sounds like we're in the [dumb zone](./Smart%20zone.md)."
+"它一直在 diff 里混淆两个 `user` 符号——听着像我们进 [dumb zone](./Smart%20zone.md) 了。"
 
-"Yeah, the attention relationship between each call site and its declaration is fighting the other one — same token shape, different bindings. Rename one and the pairings sharpen."
+"对,每个调用点和它的声明之间的 attention relationship 在和另一对打架——token 形状相同,绑定不同。重命名一个,配对就清晰了。"

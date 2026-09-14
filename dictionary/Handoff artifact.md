@@ -1,19 +1,19 @@
 ---
-description: A document used as the carry mechanism for a handoff — written by one session to be read by another.
+description: 作为 handoff 携带机制使用的文档——由一个 session 写下,给另一个 session 读。
 ---
 
-A document used as the carry mechanism for a [handoff](./Handoff.md) — written to the [environment](./Environment.md) by one [session](./Session.md) to be read by another. [Specs](./Spec.md), [tickets](./Ticket.md), and plan docs are all handoff artifacts.
+作为 [handoff](./Handoff.md)(交接)携带机制使用的文档——由一个 [session](./Session.md)(会话)写进 [environment](./Environment.md)(环境),给另一个 session 读。[spec](./Spec.md)、[ticket](./Ticket.md) 和方案文档都是 handoff artifact(交接产物)。
 
-The reason to write one: the [model](./Model.md) is [stateless](./Stateless.md), so nothing in a session survives [clearing](./Clearing.md) it. Decisions, constraints, half-finished plans — all gone with the [context](./Context.md) that held them. The environment persists. Writing the important state into a file moves it somewhere the next session can read it back from.
+要写它的原因:[model](./Model.md)(模型)是 [stateless](./Stateless.md)(无状态)的,session 里的一切都活不过 [clearing](./Clearing.md)(清空)。决定、约束、做了一半的方案——都随承载它们的 [context](./Context.md)(上下文)一起消失。environment 是持久的。把重要的状态写进文件,就是把它挪到下一个 session 能读回来的地方。
 
-The artifact is a [secondary source](./Secondary%20source.md) — an account of the session's work, not the work itself. That's what makes it small enough to brief a fresh session, and also why it can mislead one: it records what the writing session believed, and anything it left out or got wrong is invisible to the reader. Where a claim matters, the next session should verify it against the [primary source](./Primary%20source.md) — the code, the tests — rather than inherit it.
+artifact 是一种 [secondary source](./Secondary%20source.md)(二手来源)——对 session 工作的转述,不是工作本身。这让它小到足以给一个全新的 session 做简报,也是它可能误导新 session 的原因:它记下的是写它的 session 相信的东西,它漏掉的或写错的,读者无从察觉。凡是重要的断言,下一个 session 应该对着 [primary source](./Primary%20source.md)(一手来源)——代码、测试——验证,而不是照单继承。
 
-A good artifact is written to be read into a session that has zero context. Concrete file paths rather than "the file we discussed". What was decided and why, so the next session doesn't relitigate it. What's done and what's left. It helps to tell the writing session where the artifact is headed: "write a handoff doc for a fresh session that knows nothing about this work".
+好的 artifact 是写给一个零 context 的读者看的。具体的文件路径,而不是"我们讨论过的那个文件"。决定了什么、为什么这么决定,让下一个 session 不必重新开议。做完了什么、还剩什么。告诉写它的 session 这份文档的去向也有帮助:"为一个对这项工作一无所知的新 session 写一份交接文档。"
 
-The alternative carry mechanism is [compaction](./Compaction.md), which summarises in-memory. The artifact has two advantages: it lives on disk where you can read and correct it before anything depends on it, and it can be reused — the same spec can brief five parallel sessions.
+另一种携带机制是 [compaction](./Compaction.md)(压实),在内存里摘要。artifact 有两个优势:它住在磁盘上,在任何东西依赖它之前,你可以先读它、改它;而且它可以复用——同一份 spec 可以给五个并行 session 做简报。
 
 _Usage:_
 
-"How do I split this between the planning [agent](./Agent.md) and the implementing one?"
+"这个活怎么在规划 agent 和实现 agent 之间分工?"
 
-"Have the planner write a handoff artifact — file paths, decisions, constraints. The implementer's session opens with a pointer to the artifact and works from it as its brief."
+"让规划 agent 写一份 handoff artifact——文件路径、决定、约束。实现 agent 的 session 开场就指向这份 artifact,把它当作简报来干活。"

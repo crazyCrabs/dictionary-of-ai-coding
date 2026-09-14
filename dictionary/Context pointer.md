@@ -1,21 +1,21 @@
 ---
-description: A mention in one document that points to another, so the agent can pull it into context only when the task calls for it.
+description: 一份文档里指向另一份的提及,agent 只在任务需要时才把它拉进上下文。
 ---
 
-A mention in one document that points to another, so the [agent](./Agent.md) can pull it into the [context window](./Context%20window.md) only when the task calls for it. The unit [progressive disclosure](./Progressive%20disclosure.md) is built from.
+一份文档里指向另一份的提及,[agent](./Agent.md)(智能体)只在任务需要时,才把后者拉进 [context window](./Context%20window.md)(上下文窗口)。是 [progressive disclosure](./Progressive%20disclosure.md)(渐进披露)赖以搭建的单位。
 
-The reason to use a pointer (instead of inlining the content) is cost. A pointer is one line in the context window. The document behind it might be thousands of [tokens](./Token.md), but those tokens cost nothing until the agent actually follows the pointer. Inline a 2,000-token runbook in [AGENTS.md](./AGENTS.md.md) and every [session](./Session.md) pays for it; replace it with "deploy process: see `internal/deploy.md`" and only the sessions that deploy ever load it. The agent follows the pointer with a [tool call](./Tool%20call.md) when the task matches.
+用指针(而不是内联内容)的理由是成本。一个指针只是 context window 里的一行。它背后的文档可能有好几千 [token](./Token.md),但在 agent 真的去跟随指针之前,这些 token 一个都不计费。把一份 2000 token 的部署手册内联进 [AGENTS.md](./AGENTS.md.md),每个 [session](./Session.md)(会话)都为它付钱;换成"deploy process: see `internal/deploy.md`",只有真正部署的 session 才装载它。任务匹配时,agent 用一次 [tool call](./Tool%20call.md)(工具调用)跟随指针。
 
-A pointer needs two parts to work: a stable path, and enough description for the agent to know when following it is worth it. A bare path is a pointer the agent has no reason to follow; "see `internal/deploy.md`" with no hint of what's inside gets skipped by a session that needed it. Write the line so it matches how tasks present: "release, deploy, or rollback — read `internal/deploy.md` first".
+一个指针要能用,需要两样东西:一条稳定的路径,和足够的描述让 agent 知道何时值得跟随。裸路径是指针里 agent 没有理由跟的那种;"see `internal/deploy.md`"但不提里面有什么,需要它的 session 也会跳过。把这一行写成任务出现时的样子:"release、deploy 或 rollback——先读 `internal/deploy.md`"。
 
-Pointers are everywhere once you look: lines in AGENTS.md, [skill](./Skill.md) descriptions (the harness loads the description; the skill body waits behind it), filenames in a directory listing, links between docs.
+一旦留心,指针无处不在:[AGENTS.md](./AGENTS.md.md) 里的行、[skill](./Skill.md) 的描述(harness 装载描述;skill 正文在它后面等着)、目录列表里的文件名、文档之间的链接。
 
-A pointer can also tie a [secondary source](./Secondary%20source.md) back to the [primary source](./Primary%20source.md) it was derived from — the compaction summary that names the original transcript, the doc that names the source file it describes. This makes the secondary source's lossiness recoverable: when the summary turns out not to be enough, the agent follows the pointer and reads the original, instead of working from whatever the summary kept.
+指针还可以把一个 [secondary source](./Secondary%20source.md)(二手来源)拴回它所出自的 [primary source](./Primary%20source.md)(一手来源)——写明原始对话记录的压缩摘要,写明它描述的是哪个源文件的文档。这让二手来源的有损变得可恢复:当摘要不够用时,agent 顺着指针去读原文,而不是对着摘要保留下来的东西硬干。
 
-_Avoid:_ "reference" — too dry; doesn't convey that following it pulls more context in. "Portal" — too florid.
+_避免:_ "reference"——太干瘪;传达不出"跟随它会拉进更多 context"的意思。"Portal"——太花哨。
 
 _Usage:_
 
-"AGENTS.md is getting huge."
+"AGENTS.md 越来越大了。"
 
-"Most of it should be context pointers, not content. Keep the always-on rules inline; turn the deploy runbook and the style guide into skills and leave a context pointer behind."
+"里面大部分应该是 context pointer,不是内容。常驻的规则留在内联;把部署手册和风格指南做成 skill,在原地留一个 context pointer。"

@@ -1,25 +1,25 @@
 ---
-description: What the harness shows the user before executing a tool call that isn't pre-approved. The mechanism for putting a human in the loop.
+description: harness 在执行未被预先批准的工具调用前展示给用户的东西。把人放进循环的机制。
 ---
 
-What the [harness](./Harness.md) shows the user before executing a [tool call](./Tool%20call.md) that isn't pre-approved. The [model](./Model.md) produces a tool call; instead of running it immediately, the harness pauses and asks. Approve and it runs; deny and the harness reports the denial back to the model as a [tool result](./Tool%20result.md). The mechanism by which a harness puts a human in the [loop](./Human-in-the-loop.md) for risky or sensitive actions.
+[harness](./Harness.md)(宿主环境)在执行一个未被预先批准的 [tool call](./Tool%20call.md)(工具调用)之前,展示给用户的东西。[model](./Model.md)(模型)产出一个 tool call;harness 不立即运行,而是停下来问。批准就执行;拒绝,harness 就把拒绝作为一条 [tool result](./Tool%20result.md)(工具结果)报告给模型。这是 harness 把人放进 [loop](./Human-in-the-loop.md)(人在回路)来把关高风险或敏感动作的机制。
 
-The lifecycle of a permission request:
+一次 permission request 的生命周期:
 
-| Step | Who     | What happens                                                                            |
-| ---- | ------- | --------------------------------------------------------------------------------------- |
-| 1    | Model   | Produces a tool call                                                                    |
-| 2    | Harness | Checks it against the [permission mode](./Permission%20mode.md) and any saved approvals |
-| 3    | Harness | Pre-approved: executes immediately. Otherwise: pauses and shows the request             |
-| 4    | User    | Approves once, approves for the rest of the [session](./Session.md), or denies          |
-| 5    | Harness | Executes the call, or sends the denial back as a tool result                            |
+| 步骤 | 谁      | 发生什么                                                              |
+| ---- | ------- | --------------------------------------------------------------------- |
+| 1    | Model   | 产出一个 tool call                                                    |
+| 2    | Harness | 对照 [permission mode](./Permission%20mode.md) 和已保存的批准记录检查 |
+| 3    | Harness | 已预批:立即执行。否则:暂停并展示请求                                  |
+| 4    | User    | 批准一次、批准整个 [session](./Session.md)(会话),或拒绝               |
+| 5    | Harness | 执行调用,或把拒绝作为 tool result 送回去                              |
 
-Denying a request steers the agent. The model reads the denial like any other tool result and reacts to it — it tries a different approach, or asks what you'd prefer. Most harnesses let you attach a message to the denial, which turns the request into a steering point: "not like that, use the migration script instead" lands exactly when the model is deciding what to do next.
+拒绝一个请求,本身就是一次转向。模型像读其他 tool result 一样读拒绝并做出反应——它换个路子,或者问你倾向怎么做。大多数 harness 允许在拒绝时附一句话,这就把请求变成了转向点:"别这样,改用迁移脚本"恰好落在模型决定下一步怎么做的那一刻。
 
-The cost is that every request is a synchronous wait on you. The [agent](./Agent.md) sits blocked until you answer, which is fine while you're watching and a problem when you're not — an agent that triggers requests constantly can't be left to work [AFK](./AFK.md). The permission mode is the dial: which calls run freely, which ask first, ideally with a [sandbox](./Sandbox.md) making it safe to widen the free set.
+代价是每个请求都是对你的一次同步等待。[agent](./Agent.md)(智能体)卡在那儿直到你回应——你在看着时没问题,你不在时就是麻烦:一个不断触发请求的 agent 没法放着 [AFK](./AFK.md) 干活。permission mode 就是那个旋钮:哪些调用直接放行、哪些先问,理想情况下再配一个 [sandbox](./Sandbox.md),让扩大放行集合变得安全。
 
 _Usage:_
 
-"It's been blocked on a permission request for ten minutes — I was in a meeting."
+"它卡在一个 permission request 上十分钟了——我在开会。"
 
-"That's the cost of human-in-the-loop. Pre-approve the safe [tools](./Tool.md) so the request only fires on the actually-risky calls."
+"这就是 human-in-the-loop 的成本。把安全的 [tool](./Tool.md) 预批掉,让请求只在真正危险的调用上触发。"

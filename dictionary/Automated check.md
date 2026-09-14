@@ -1,21 +1,21 @@
 ---
-description: A deterministic verification that runs in the environment — tests, type checks, lints, build, pre-commit hooks. Pass/fail, no judgement.
+description: 在环境里运行的确定性验证——测试、类型检查、lint、构建、pre-commit 钩子。过/不过,不做判断。
 ---
 
-A deterministic verification that runs in the [environment](./Environment.md) — tests, type checks, lints, build, pre-commit hooks. Pass/fail, no judgement. The signal an [agent](./Agent.md) can self-correct from without involving anyone else. A flaky test is a broken check, not a non-check; automated checks are deterministic _by design_.
+在 [environment](./Environment.md)(环境)里运行的确定性验证——测试、类型检查、lint、构建、pre-commit 钩子。过/不过,不做判断。这是 [agent](./Agent.md)(智能体)不需要任何人参与就能自我纠正的信号。flaky test(不稳定的测试)是坏掉的 check,不是"没有 check";automated check(自动检查)在设计上就是确定性的。
 
-Self-correction works as a loop. The agent makes a change, runs the check as a [tool call](./Tool%20call.md), and the failure output lands in its [context window](./Context%20window.md) — a type error with a file and line, a failing assertion with expected and actual values. That's enough for the agent to fix the problem and run the check again, around and around until it passes, with no human in the loop. Determinism is what makes the loop trustworthy: the same code always produces the same verdict, so a pass means something. A flaky check poisons this — the agent "fixes" code that was fine, or retries past a real failure.
+自我纠正以循环的方式工作。agent 做一个改动,把 check 当作一次 [tool call](./Tool%20call.md)(工具调用)来跑,失败输出落进它的 [context window](./Context%20window.md)——一条带文件和行号的类型错误,一条带期望值和实际值的断言失败。这足够它修好问题再跑一遍 check,如此往复直到通过,全程无需人参与。确定性是让这个循环可信的东西:同样的代码永远得到同样的判决,通过才有意义。一个 flaky 的 check 会毒化这一切——agent 去"修"没问题的代码,或在真失败上无限重试。
 
-This is why good checks are a large part of a codebase's [AX](./AX.md). An agent in a repo with strict types, a fast test suite, and a linter catches most of its own mistakes before you see them; an agent in a repo with none of those ships whatever it produces. The difference matters most in [AFK](./AFK.md) runs, where checks are the only verification happening during the run. But a check only catches what it asserts — green checks mean the asserted properties hold, not that the code is right. The judgement-shaped gaps are what [automated review](./Automated%20review.md) and [human review](./Human%20review.md) are for.
+这就是为什么好的 check 是代码库 [AX](./AX.md) 的很大一部分。一个有严格类型、快速测试套件和 linter 的仓库里,agent 在你看到之前就抓住了自己大部分错误;一样都没有的仓库里,agent 产出什么就交什么。差别在 [AFK](./AFK.md) 运行中最大——那是整个运行期间唯一的验证。但 check 只抓它断言的东西——绿灯意味着被断言的性质成立,不意味着代码是对的。判断形状的空隙,留给 [automated review](./Automated%20review.md)(自动审查)和 [human review](./Human%20review.md)(人工审查)。
 
-_Avoid:_ "feedback loop" / "backpressure" — both lump checks together with review. _Avoid:_ "test" — tests are automated checks, but not all automated checks are tests.
+_避免:_ "feedback loop" / "backpressure"——两者都把 check 和 review 混为一谈。_避免:_ "test"——测试是 automated check,但不是所有 automated check 都是测试。
 
 _Usage:_
 
-"The agent keeps shipping broken code in the AFK runs."
+"AFK run 里 agent 一直交坏代码。"
 
-"What automated checks are wired into the [sandbox](./Sandbox.md)?"
+"[sandbox](./Sandbox.md) 里接了哪些 automated check?"
 
-"Just the unit tests."
+"只有单元测试。"
 
-"Add typecheck and lint — it'll self-correct from those before the PR ever lands."
+"加上 typecheck 和 lint——PR 落地之前它就能靠这些自我纠正了。"

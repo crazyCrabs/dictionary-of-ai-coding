@@ -1,19 +1,19 @@
 ---
-description: The user reading the code the agent produced and forming a judgement on it. Reading the diff counts; reading the summary doesn't.
+description: 用户阅读 agent 产出的代码并对它形成判断。读 diff 算数;读摘要不算。
 ---
 
-The user reading the code the [agent](./Agent.md) produced and forming a judgement on it. Reading the diff or the changed files counts; reading the agent's _description_ of what it did does not — narration is not the artifact. The description is a [secondary source](./Secondary%20source.md), written by the party being reviewed; the diff is the [primary source](./Primary%20source.md), and review means reading it.
+用户阅读 [agent](./Agent.md)(智能体)产出的代码,并对它形成判断。读 diff 或被改动的文件算数;读 agent 对自己所作所为的*描述*不算——叙述不是产物。描述是一份 [secondary source](./Secondary%20source.md)(二手来源),出自被审查的一方;diff 是 [primary source](./Primary%20source.md)(一手来源),review(审查)的意思就是把 diff 读了。
 
-Agents raise the volume of code produced, so review becomes the bottleneck. One useful idea is layering different review strategies. [Automated checks](./Automated%20check.md) catch the mechanical failures, [automated review](./Automated%20review.md) catches the describable ones, and human review is reserved for what only you can judge — whether the change is the right change, whether the approach fits the codebase, whether this should exist at all.
+agent 抬高了代码的产量,于是审查成了瓶颈。一个有用的想法是给审查策略分层。[automated check](./Automated%20check.md)(自动检查)抓机械性失败,[automated review](./Automated%20review.md)(自动审查)抓可描述的问题,human review(人工审查)只留给只有你能判断的东西——这个改动是不是对的改动,这个路子合不合这个代码库,这个东西到底该不该存在。
 
-Review is also cheaper earlier. Reading a plan before work starts, or a small diff mid-flight, takes minutes; excavating a finished branch after an [AFK](./AFK.md) run takes longer. Where you place the review checkpoint is a [human-in-the-loop](./Human-in-the-loop.md) decision, not an afterthought.
+审查也是越早越便宜。开工前读一份方案,或中途读一个小 diff,只要几分钟;AFK([AFK](./AFK.md))跑完之后去挖一条完成的分支,要久得多。审查检查点放在哪儿,是一个 [human-in-the-loop](./Human-in-the-loop.md)(人在回路)的决定,不是事后想起来的事。
 
-_Avoid:_ "code review" alone — ambiguous between human and automated.
+_避免:_ 单说 "code review"——分不清是人工还是自动。
 
 _Usage:_
 
-"I human-reviewed the AFK output."
+"我 human review 过 AFK 的产出了。"
 
-"You read the diff or just the summary?"
+"你读的是 diff,还是摘要?"
 
-"Diff. The summary said it deleted dead code — turned out the function was called from a generated file."
+"diff。摘要说它删的是死代码——结果那个函数是从一个生成文件里调用的。"

@@ -1,15 +1,15 @@
 ---
-description: One user message plus everything the agent does in response, up until it yields back to the user. Contains one or more provider requests.
+description: 一条用户消息,加上 agent 为回应它所做的一切,直到它交还控制权。包含一次或多次供应商请求。
 ---
 
-One user message plus everything the [agent](./Agent.md) does in response, up until it yields back to the user. Contains one or more [model provider requests](./Model%20provider%20request.md) — many, if the agent calls [tools](./Tool.md). A clarifying question closes the turn; your reply opens the next one. The hierarchy is [session](./Session.md) **> Turn > Model provider request**.
+一条用户消息,加上 [agent](./Agent.md)(智能体)为回应它所做的一切,直到它把控制权交还给你。包含一次或多次 [model provider request](./Model%20provider%20request.md)(模型供应商请求)——agent 调用 [tool](./Tool.md) 时是很多次。一个澄清提问会闭合当前 turn;你的回复开启下一个。层级是 [session](./Session.md)(会话) **> Turn > Model provider request**。
 
-What makes the turn worth naming is that its length is the agent's decision, not yours. You hand over one message; the agent decides how many tool calls to chain before yielding. A turn can be a one-sentence answer or twenty minutes of reading, editing, and running tests. That's the same property from two angles: long turns are what make [AFK](./AFK.md) work possible, and long turns are also where things go wrong unsupervised — by the time the agent yields, it may have drifted a long way from what you meant.
+turn 值得起名,是因为它的长度由 agent 决定,不是你。你交出一条消息;agent 决定交还之前串多少次工具调用。一个 turn 可以是一句话的回答,也可以是二十分钟的读、改、跑测试。这是同一件事的两个面:长 turn 是 [AFK](./AFK.md) 这种工作方式成立的前提;长 turn 也是无人监督时出问题的地方——等 agent 交还时,它可能已经离你的本意很远了。
 
-The turn is also the natural unit for steering. Everything inside a turn happens without you; the gaps between turns are where you redirect. Most [harnesses](./Harness.md) soften this: you can interrupt mid-turn to stop the agent and redirect it, or type a message while it works, which gets read once the turn completes. If you find yourself repeatedly unhappy with where turns end up, the fix is usually to ask for smaller ones — a plan first, one step at a time — trading autonomy for more frequent gaps to steer in.
+turn 也是转向(steer)的自然单位。turn 之内的一切都发生在你不在场的时候;turn 之间的间隙,才是你改变方向的地方。大多数 [harness](./Harness.md)(宿主环境)会软化这一点:你可以在 turn 中途打断 agent 并让它改道,或在它干活时输入一条消息,等 turn 结束被读取。如果你反复对 turn 的结局不满意,修法通常是要求更小的 turn——先出方案,一次一步——用自主权换更频繁的、可以插手转向的间隙。
 
 _Usage:_
 
-"One turn took two minutes?"
+"一个 turn 花了两分钟?"
 
-"It made fourteen [tool calls](./Tool%20call.md) inside that turn — each one is a separate model provider request. Latency stacks up before the agent finally yields back to you."
+"它在这个 turn 里做了十四次 [tool call](./Tool%20call.md)(工具调用)——每次都是独立的 model provider request。延迟层层叠加,最后才交还给你。"

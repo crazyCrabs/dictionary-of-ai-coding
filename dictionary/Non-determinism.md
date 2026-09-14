@@ -1,17 +1,17 @@
 ---
-description: The same input can produce different output. A property of how models generate text and how providers serve requests.
+description: 同样的输入可以产出不同的输出。这是模型生成文本和供应商服务请求的方式所固有的性质。
 ---
 
-The same input can produce different output. Run a [model](./Model.md) twice with identical [context](./Context.md) and you may get two different answers — sometimes a word, sometimes a completely different approach. Nothing in your code has to change for this to happen.
+同样的输入可以产出不同的输出。用完全相同的 [context](./Context.md)(上下文)把一个 [model](./Model.md)(模型)跑两遍,你可能得到两个不同的答案——有时差一个词,有时是完全不同的方案。你的代码什么都不用变,这就会发生。
 
-It's a property of how models generate text, and how [model providers](./Model%20provider.md) serve [requests](./Model%20provider%20request.md). During [inference](./Inference.md), the model produces a probability distribution over possible next [tokens](./Token.md) and one is sampled from it — usually with some randomness on purpose, since always picking the most likely token produces repetitive, lower-quality text. One differently-sampled token early in a response changes every token after it, which is how a single different word becomes a completely different approach. Provider-side serving adds more variation on top: requests are batched together on shared hardware, and tiny floating-point differences between batches can tip a close call between two tokens. There's no setting you can flip to make it all go away.
+这是模型生成文本的方式、以及 [model provider](./Model%20provider.md)(模型供应商)服务[请求](./Model%20provider%20request.md)的方式所固有的性质。[inference](./Inference.md)(推理)时,模型对所有可能的下一个 [token](./Token.md)(词元)产出一个概率分布,从中采样一个——通常故意带点随机性,因为永远选最可能的 token 会产出重复、低质的文本。回答早期一个被不同采样的 token,会改变它之后的每一个 token,这就是一个词的不同如何演变成整个方案的不同。供应商侧的服务又叠加了更多变数:请求在共享硬件上被批处理,批之间的微小浮点差异,就能在两个 token 之间翻转一个五五开的选择。没有任何设置能让这一切消失。
 
-Expect a spread of results from an [agent](./Agent.md) on the same task. Most responses fall within a reasonable bell curve of quality — that's why the non-determinism is tolerable at all — but the tails are real: some days the model will feel sharp; some days it'll feel like it's lost the plot. Same task, different rolls of the dice. This has two practical consequences. Retrying is a legitimate strategy: a failed attempt is one draw from the distribution, and a fresh attempt at the same task may simply land better. And verification matters more than it would with deterministic tools — you can't test an agent's behaviour once and rely on it repeating, so [automated checks](./Automated%20check.md) have to catch the bad draws.
+对同一个任务,要预期 [agent](./Agent.md)(智能体)的产出是一个分布。大多数回答落在合理的质量钟形曲线里——这就是非确定性尚可容忍的原因——但尾部是真实的:有些天模型显得锋利,有些天它显得丢了主线。同一个任务,不同的骰子。这有两个实际推论。重试是正当策略:一次失败只是分布中的一次抽样,同一任务再开一次可能就落得更好。而验证比在确定性工具上更重要——你没法测一次 agent 的行为就指望它复现,所以[自动化检查](./Automated%20check.md)(automated check)必须负责抓住坏样本。
 
-Be careful not to over-narrativize this. Humans are pattern-matching machines, and a string of bad runs can feel like proof that "the model got worse this week." Usually it's just the distribution.
+小心别过度叙事化。人是模式匹配机器,一连串坏运行会让你觉得"这周模型变差了"。通常那只是分布。
 
 _Usage:_
 
-"Claude has been awful today. Did they ship a worse version?"
+"Claude 今天糟糕透了。他们是不是发布了更差的版本?"
 
-"Probably not — model output is non-deterministic. You're going to have good days and bad days on the same task. Try again tomorrow before you go looking for a cause."
+"大概率不是——模型输出是非确定性的。同一个任务,你会有好日子和坏日子。明天再试一次,再去找原因。"

@@ -1,15 +1,15 @@
 ---
-description: A tree of files and directories the agent reads from, writes to, and executes within — the default environment for a coding agent.
+description: agent 读写和执行所在的文件与目录树——编程 agent 的默认环境。
 ---
 
-A tree of files and directories the [agent](./Agent.md) reads from, writes to, and executes within — the default kind of [environment](./Environment.md) for a coding agent. [AGENTS.md](./AGENTS.md.md), [skills](./Skill.md), source code, build scripts, and [tool](./Tool.md) configs all live in a filesystem. When a [harness](./Harness.md) "starts in your project," it's pointing the agent at a filesystem.
+[agent](./Agent.md)(智能体)读、写和执行所在的文件与目录树——编程 agent 默认的 [environment](./Environment.md)(环境)。[AGENTS.md](./AGENTS.md.md)、[skill](./Skill.md)、源代码、构建脚本和 [tool](./Tool.md)(工具)配置都住在 filesystem 里。当一个 [harness](./Harness.md)(宿主环境)"在你的项目里启动",指的就是把 agent 指向一个 filesystem。
 
-The agent touches it only through [tool calls](./Tool%20call.md) — reading a file, writing one, running a shell command. Nothing on disk is in the [context window](./Context%20window.md) until a tool call loads it, which is what lets the agent work in a repository far larger than the window: the filesystem holds everything, the context holds only what the current task has read. Some harnesses do load the current directory's filenames into the context window by default — not the contents, just the tree — which act as [context pointers](./Context%20pointer.md): the agent sees what exists and reads the files it needs.
+agent 只通过 [tool call](./Tool%20call.md)(工具调用)接触它——读文件、写文件、跑 shell 命令。磁盘上的任何东西在被 tool call 装载之前,都不在 [context window](./Context%20window.md) 里;正因如此,agent 才能在一个远大于窗口的仓库里工作:filesystem 装着一切,context 只装当前任务读过的部分。一些 harness 默认把当前目录的文件名——不是内容,只是目录树——装进 context window,它们起的是 [context pointer](./Context%20pointer.md)(上下文指针)的作用:agent 看到有什么存在,再去读需要的文件。
 
-And it's shared with you. The files the agent edits are the same ones you open in your editor and diff in git — the filesystem is the common workspace where you review what the agent did.
+它还和你共享。agent 编辑的文件,就是你在编辑器里打开、在 git 里 diff 的同一批——filesystem 是你审查 agent 所作所为的公共工作场地。
 
 _Usage:_
 
-"Why isn't it picking up my AGENTS.md?"
+"为什么它不读我的 AGENTS.md?"
 
-"It's running against a different filesystem — the [sandbox](./Sandbox.md) mounted the parent dir, not the project root. Repoint the harness."
+"它挂在另一个 filesystem 上——[sandbox](./Sandbox.md) 挂载了父目录,不是项目根目录。重新指一下 harness。"

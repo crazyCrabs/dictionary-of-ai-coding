@@ -1,15 +1,15 @@
 ---
-description: The date past which a model has no parametric knowledge. Post-cutoff libraries and APIs are fabrication traps unless docs are loaded.
+description: 模型参数化知识止步的日期。截止之后的库和 API 是编造陷阱,除非装载了文档。
 ---
 
-The date past which a [model](./Model.md) has no [parametric knowledge](./Parametric%20knowledge.md). Libraries, APIs, and events from after the cutoff are fabrication traps unless their docs are loaded as [contextual knowledge](./Contextual%20knowledge.md). Each model release ships with its own cutoff.
+[model](./Model.md)(模型)的 [parametric knowledge](./Parametric%20knowledge.md)(参数化知识)止步的日期。截止之后的库、API 和事件都是编造陷阱,除非它们的文档被作为 [contextual knowledge](./Contextual%20knowledge.md)(上下文知识)装载。每次模型发布都带着自己的截止日期。
 
-The cutoff exists because of how models are made: [training](./Training.md) bakes a snapshot of text into the model's [parameters](./Parameters.md), and after that the parameters are frozen. The model doesn't know its knowledge has an edge — asked about something past the cutoff, it doesn't refuse, it extrapolates from the nearest thing it does know. That's what makes the trap quiet: code written against an old version of a library looks plausible, often compiles, and fails on the parts that changed.
+截止日期存在,是因为模型的制造方式:[training](./Training.md)(训练)把一份文本快照烤进模型的 [parameters](./Parameters.md)(参数),此后参数冻结。模型不知道自己的知识有边界——被问到截止日期之后的东西,它不会拒绝回答,而是从最接近的已知内容向外推。这就是陷阱无声的原因:对着旧版本库写的代码看起来可行,常常还能编译通过,只在变过的那些部分上失败。
 
-The fix is always the same: get current information into [context](./Context.md). Load the changelog, point at the installed version's type definitions, or have the agent read the docs from the web. Anything in context outranks nothing-in-parameters.
+修法永远一样:把当下的信息装进 [context](./Context.md)(上下文)。装载 changelog,指向已安装版本的类型定义,或让 agent 上网读文档。context 里的任何东西,都胜过参数里的空白。
 
 _Usage:_
 
-"It keeps writing the v3 SDK syntax — we're on v5."
+"它一直写 v3 SDK 的语法——我们用的是 v5。"
 
-"v5 shipped after the knowledge cutoff. Load the v5 changelog as contextual knowledge, otherwise it'll keep fabricating from the older parametric version."
+"v5 发布在 knowledge cutoff 之后。把 v5 的 changelog 作为 contextual knowledge 装进去,否则它会继续从旧版本的 parametric knowledge 里编造。"

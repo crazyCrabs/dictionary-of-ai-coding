@@ -1,26 +1,26 @@
 ---
-description: A function the harness exposes for the agent to call — Read, Write, Bash, Search. How an agent perceives and acts on the environment.
+description: harness 暴露给 agent 调用的函数——Read、Write、Bash、Search。agent 感知和作用于环境的方式。
 ---
 
-A function the [harness](./Harness.md) exposes for the [agent](./Agent.md) to call — Read, Write, Bash, Search. Tools are how an agent perceives and acts on the [environment](./Environment.md): it can't see the environment except through [tool results](./Tool%20result.md), and can't change it except through [tool calls](./Tool%20call.md). Each tool call costs an extra [model provider request](./Model%20provider%20request.md), since the result has to go back to the model before it can decide what to do next.
+[harness](./Harness.md)(宿主环境)暴露给 [agent](./Agent.md)(智能体)调用的函数——Read、Write、Bash、Search。tool 是 agent 感知和作用于 [environment](./Environment.md)(环境)的方式:不通过 [tool result](./Tool%20result.md)(工具结果)它看不见环境,不通过 [tool call](./Tool%20call.md)(工具调用)它改变不了环境。每次 tool call 都多付一次 [model provider request](./Model%20provider%20request.md)(模型供应商请求),因为结果必须先送回 [model](./Model.md)(模型),它才能决定下一步。
 
-Tools most coding agents ship with:
+大多数编程 agent 自带的 tool:
 
-| Tool   | What it does                                                 |
-| ------ | ------------------------------------------------------------ |
-| Read   | Returns a file's contents as a tool result                   |
-| Write  | Creates or edits a file in the [filesystem](./Filesystem.md) |
-| Bash   | Runs a shell command and returns its output                  |
-| Search | Finds files or text matching a pattern across the codebase   |
+| Tool   | 做什么                                            |
+| ------ | ------------------------------------------------- |
+| Read   | 把文件内容作为 tool result 返回                   |
+| Write  | 在 [filesystem](./Filesystem.md) 里创建或编辑文件 |
+| Bash   | 跑一条 shell 命令,返回其输出                      |
+| Search | 在代码库里查找匹配模式的文件或文本                |
 
-A tool is defined by three things: a name, a description of what it does, and a schema for its parameters. The harness sends these definitions to the [model](./Model.md) with every request, and the model chooses a tool the same way it produces everything else — by writing [tokens](./Token.md), in this case a structured call with arguments. The model never executes anything itself; the harness reads the call, runs the function, and sends back the result.
+一个 tool 由三样东西定义:名字、一段功能描述、参数的 schema。harness 随每个请求把这些定义发给 [model](./Model.md),而模型选择 tool 的方式与它产出其他一切的方式相同——写 [token](./Token.md)(词元),在这里是一段带参数的结构化调用。模型自己从不执行任何东西;harness 读出调用,执行函数,把结果送回去。
 
-The tool list sets what the agent can do. A capable model with a narrow tool set is a narrow agent: it will route everything through whatever it has, which is why agents lean so heavily on Bash — a shell is one tool that reaches most of the system. To give an agent a capability cleanly, add a tool for it; [MCP](./MCP.md) is the standard for plugging in tools from outside the harness.
+tool 列表决定了 agent 能做什么。能力强的模型配一个窄工具集,就是一个窄 agent:它会把一切都塞进手头有的工具里,这就是为什么 agent 如此依赖 Bash——shell 是一个够到系统大部分角落的 tool。想干净地给 agent 一种能力,就为它加一个 tool;[MCP](./MCP.md) 是把 harness 之外的工具插进来的标准。
 
-Tool definitions occupy [context](./Context.md) on every request, so a large tool set has a standing cost before any tool is called — and many similarly-described tools make the model worse at picking the right one.
+tool 定义在每个请求里都占 [context](./Context.md)(上下文),所以大的工具集在任何调用发生之前就有常驻成本——而许多描述相似的 tool,会让模型更难挑中正确的那个。
 
 _Usage:_
 
-"Can the agent query staging directly?"
+"agent 能直接查 staging 吗?"
 
-"Add a `psql` tool to the harness, scoped read-only on staging. Without a tool for it, the agent's blind to anything outside the filesystem."
+"给 harness 加一个 `psql` tool,scope 限定为 staging 只读。没有对应的 tool,agent 对 filesystem 之外的一切都是盲的。"

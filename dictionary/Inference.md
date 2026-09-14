@@ -1,22 +1,22 @@
 ---
-description: Running a trained model to generate output — what happens on every model provider request. Parameters stay fixed.
+description: 运行训练好的模型来生成输出——每次模型供应商请求都在发生的事。参数保持不变。
 ---
 
-Running a trained [model](./Model.md) to generate output — what happens on every [model provider request](./Model%20provider%20request.md). [Parameters](./Parameters.md) stay fixed; the model just does [next-token prediction](./Next-token%20prediction.md) over the [context](./Context.md) it's given. Cheap relative to [training](./Training.md), but billed per [token](./Token.md) and the dominant cost of using a model.
+运行训练好的 [model](./Model.md)(模型)来生成输出——每次 [model provider request](./Model%20provider%20request.md)(模型供应商请求)发生的就是这件事。[parameters](./Parameters.md)(参数)保持不变;模型只是对给定的 [context](./Context.md)(上下文)做 [next-token prediction](./Next-token%20prediction.md)(下一词元预测)。相比 [training](./Training.md)(训练)便宜,但按 [token](./Token.md)(词元)计费,是用模型的主要成本。
 
-A model's life splits into two phases:
+模型的一生分两个阶段:
 
-| Phase     | When it happens                  | What it does                                                    | Parameters    |
-| --------- | -------------------------------- | --------------------------------------------------------------- | ------------- |
-| Training  | Once, before release             | Produces the parameters from a training corpus                  | Being written |
-| Inference | Every time anyone uses the model | Runs the frozen parameters over your context to generate tokens | Read-only     |
+| 阶段      | 何时发生         | 做什么                                | 参数       |
+| --------- | ---------------- | ------------------------------------- | ---------- |
+| Training  | 一次,发布之前    | 从训练语料产出参数                    | 正在被写入 |
+| Inference | 每次有人使用模型 | 用冻结的参数跑你的 context,生成 token | 只读       |
 
-Nothing you do at inference time writes back to the parameters — that's the reason a correction you make today doesn't stick tomorrow. The model that makes the same mistake next [session](./Session.md), after you carefully explained the fix, hasn't ignored you; it's incapable of learning from the exchange. The model is [stateless](./Stateless.md) — continuity has to come from outside it — from the [context window](./Context%20window.md) or a [memory system](./Memory%20system.md).
+你在推理时做的任何事都不会写回参数——这就是你今天做的纠正,明天留不下来的原因。下一个 [session](./Session.md)(会话)里,你明明仔细解释过修法,模型还是犯同样的错——它没有无视你;它没有能力从这次交流中学到东西。model 是 [stateless](./Stateless.md)(无状态)的——连续性必须来自模型之外:来自 [context window](./Context%20window.md) 或 [memory system](./Memory%20system.md)(记忆系统)。
 
-This mechanism also explains how you're billed. Every request runs the model over the full context, so cost scales with [input tokens](./Input%20tokens.md) and [output tokens](./Output%20tokens.md), and an agent making dozens of [tool](./Tool.md) calls pays for inference on each round trip. This is why context size is a cost question as well as a quality one.
+这个机制也解释了账单。每个请求都让模型跑一遍完整的 context,所以成本随 [input tokens](./Input%20tokens.md)(输入 token)和 [output tokens](./Output%20tokens.md)(输出 token)增长,而一个做几十次 [tool](./Tool.md) 调用的 [agent](./Agent.md)(智能体),每个来回都要付一次推理费。这就是为什么 context 大小既是质量问题,也是成本问题。
 
 _Usage:_
 
-"Why does the bill scale with usage instead of being a flat license?"
+"为什么账单随用量涨,而不是一笔固定的授权费?"
 
-"You're paying for inference — every model provider request runs the model on the provider's hardware. Training already happened, but inference costs accrue per request, and a single [turn](./Turn.md) can expand into many requests when tools are called."
+"你付的是 inference——每次模型供应商请求都在供应商的硬件上跑一遍模型。训练早已完成,但推理按请求累计,而且一个 [turn](./Turn.md) 在调用工具时会膨胀成很多个请求。"

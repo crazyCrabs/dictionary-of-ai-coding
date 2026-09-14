@@ -1,15 +1,15 @@
 ---
-description: Tokens the model generates back. Billed at a higher rate than input tokens, since they cost more compute to produce.
+description: 模型生成回来的 token。计费费率高于输入 token,因为产出的算力成本更高。
 ---
 
-[Tokens](./Token.md) the [model](./Model.md) generates back. Billed at a higher rate than [input tokens](./Input%20tokens.md) — commonly around five times the rate — since they cost more compute to produce.
+[model](./Model.md)(模型)生成回来的 [token](./Token.md)(词元)。计费费率高于 [input tokens](./Input%20tokens.md)(输入 token)——常见的大约五倍——因为产出的算力成本更高。
 
-Everything the model writes counts: the prose you read, the code it emits, [tool calls](./Tool%20call.md), and any extended thinking the model does before answering. That last one surprises people — reasoning tokens are billed as output even when the [harness](./Harness.md) often doesn't show them to you, and turning up [effort](./Effort.md) spends more of them.
+模型写出的一切都算:你读到的文字、它产出的代码、[tool call](./Tool%20call.md)(工具调用),以及模型回答前的 extended thinking(扩展思考)。最后一项让人意外——reasoning token 按 output 计费,哪怕 [harness](./Harness.md)(宿主环境)常常不把它们显示给你,而调高 [effort](./Effort.md) 花掉的正是它们。
 
-Output tokens also set the pace of a [session](./Session.md). The model reads input quickly but generates output one token at a time, so when a [turn](./Turn.md) feels slow, it's almost always the output being written, not the input being read. A long wait usually means a long answer is coming.
+output tokens 还决定 [session](./Session.md)(会话)的节奏。模型读输入很快,但生成输出一次一个 token,所以当一个 [turn](./Turn.md)(轮次)感觉慢,几乎总是在写出的输出,而不是在读入的输入。等待很长,通常意味着一个长答案在路上。
 
 _Usage:_
 
-"The refactor session is burning through credit even though the inputs are small."
+"refactor session 明明输入不大,credit 却在狂烧。"
 
-"Agent's rewriting whole files instead of patching. Output tokens cost roughly five times the input rate — get it emitting edits and the bill drops."
+"agent 在整文件重写,而不是打补丁。output token 的费率大约是 input 的五倍——让它改成产出增量编辑,账单就下来了。"

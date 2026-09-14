@@ -1,22 +1,22 @@
 ---
-description: A working pattern where one or more humans pair with the agent during a session — reviewing, redirecting, or collaborating in real time.
+description: 一种工作模式:一个或多个人在会话中与 agent 搭档——实时审查、转向、协作。
 aliases:
   - HITL
   - Human-in-the-loop (HITL)
 ---
 
-A working pattern where one or more humans pair with the [agent](./Agent.md) during a [session](./Session.md) — reviewing, redirecting, or collaborating in real time. The human is present and engaged, not just gating individual actions.
+一种工作模式:一个或多个人在 [session](./Session.md)(会话)中与 [agent](./Agent.md)(智能体)搭档——实时审查、转向、协作。人在场、在参与,不只是给单个动作放行。
 
-The contrast is with [AFK](./AFK.md) work, where the agent runs unattended and you judge the result afterwards. Human-in-the-loop means catching problems while they're still cheap: you see the agent reach for the wrong file, misread the requirement, or start down a dead end, and you redirect it in one sentence — rather than discovering twenty minutes of confident work built on that mistake. Agents don't reliably know when they're off track; left alone, they tend to push forward rather than stop and ask.
+对比的另一面是 [AFK](./AFK.md) 工作:agent 无人值守地跑,你事后评判结果。human-in-the-loop(人在回路)意味着在问题还便宜的时候抓住它:你看到 agent 伸手拿错了文件、误读了需求、或开始钻进一条死胡同,一句话就能把它掰回来——而不是二十分钟后,发现一大坨自信的工作全建立在那个错误上。agent 不可靠地知道自己跑偏了;没人管的时候,它们倾向于硬着头皮往前推,而不是停下来问。
 
-Which pattern fits depends on the work. Well-specified, low-risk, easy-to-verify tasks suit AFK. Tasks that are ambiguous, irreversible, or where you'd struggle to review the finished result — a schema migration, a tricky design decision, anything touching production — suit staying in the loop. The judgement call is essentially: how expensive is a wrong turn, and how late would you catch it?
+哪种模式合适,取决于工作本身。规格清晰、低风险、易于验证的任务适合 AFK。含混的、不可逆的、或成品难以审查的任务——schema 迁移、棘手的设计决定、一切碰生产环境的东西——适合留在回路里。判断标准本质上是一句话:一次跑偏有多贵?你多晚才会发现?
 
-Some work is in-the-loop by nature, because your reactions are the input. [Grilling](./Grilling.md) only works with you there to answer the questions; [prototyping](./Prototyping.md) only works with you there to react to the artifact.
+有些工作天然就是在回路里的,因为你的反应就是输入。[grilling](./Grilling.md) 只有你在场回答问题才成立;[prototyping](./Prototyping.md) 只有你在场对产物做反应才成立。
 
-Staying in the loop costs your attention, which is the scarce resource. Part of getting better with agents is moving more work safely out of the loop — with plans, [automated checks](./Automated%20check.md), and [human review](./Human%20review.md) at the end instead of supervision throughout.
+留在回路里花的是你的注意力,而注意力是稀缺资源。用 agent 越用越好的一个部分,就是把更多工作安全地挪出回路——用方案、[automated check](./Automated%20check.md)(自动检查),和收尾时的 [human review](./Human%20review.md)(人工审查),替代全程监督。
 
 _Usage:_
 
-"Run this AFK overnight?"
+"这个挂一晚上 AFK?"
 
-"No, schema migration — keep it human-in-the-loop. I want to see each step and steer if it picks the wrong column to backfill from."
+"不行,schema 迁移——保持 human-in-the-loop。我要看到每一步,万一它选错了回填的列,我好掰它。"

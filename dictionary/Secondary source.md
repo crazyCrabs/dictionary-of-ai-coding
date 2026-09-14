@@ -1,17 +1,17 @@
 ---
-description: An account of a primary source, one step removed — summaries, docs, compaction summaries. Cheap to load, lossy by construction.
+description: 对一手来源的转述,隔了一层——摘要、文档、压缩摘要。装载便宜,构造上有损。
 ---
 
-An account of a [primary source](./Primary%20source.md), one step removed — documentation describing code, a summary describing a transcript, a report describing search results. Cheaper to load into the [context window](./Context%20window.md) than the source it describes, and lossy by construction: whoever wrote it decided what mattered, and whatever they dropped is invisible to a reader who only has the summary.
+对 [primary source](./Primary%20source.md)(一手来源)的转述,隔了一层——描述代码的文档、概述对话记录的摘要、汇总搜索结果的报告。装进 [context window](./Context%20window.md)(上下文窗口)比它所描述的来源便宜,而且构造上有损:写它的人决定了什么重要,他丢掉的部分,只读摘要的读者永远看不见。
 
-A lot of [context](./Context.md) engineering is the manufacture of secondary sources. [Compaction](./Compaction.md) turns the [session](./Session.md) history into a summary that seeds the next session. A [subagent](./Subagent.md) burns its own context on a noisy search and returns a short report. A [handoff artifact](./Handoff%20artifact.md) condenses a session's decisions into a document the next session reads. [Memory systems](./Memory%20system.md) distil what a session learned into notes. Each makes the same trade: fidelity for headroom.
+大量的 [context](./Context.md)(上下文)工程,就是制造 secondary source(二手来源)。[compaction](./Compaction.md)(压实)把 [session](./Session.md)(会话)历史变成播种下一个 session 的摘要。[subagent](./Subagent.md)(子代理)在嘈杂的搜索上烧掉自己的 context,只带回一份简短报告。[handoff artifact](./Handoff%20artifact.md)(交接产物)把一个 session 的决定浓缩成下一个 session 要读的文档。[memory system](./Memory%20system.md)(记忆系统)把 session 学到的东西蒸馏成笔记。每一样都在做同一笔交易:用保真度换空间。
 
-Secondary sources fail in two ways. They're lossy — the compaction summary that lost the schema decision, the report that didn't mention the edge case. And they drift — the primary source changes and the account doesn't follow, so docs describe last quarter's architecture with this quarter's confidence. When an [agent](./Agent.md) acts on a secondary source that has failed either way, it works confidently from wrong information; the fix is sending it back to the primary source.
+secondary source 以两种方式失败。有损——丢了 schema 决定的压缩摘要、没提边界情况的报告。漂移——primary source 变了,转述没跟上,于是文档用这一季的自信描述上一季的架构。当 [agent](./Agent.md)(智能体)基于一条已经以任一方式失效的 secondary source 行动,它从错误的信息出发干劲十足;修法是把它送回 primary source。
 
-Neither failure makes secondary sources a mistake. The context window is finite, and primary sources are expensive; without summaries, reports, and handoff documents, nothing large fits. The skill is knowing which details can survive the loss — and verifying against the primary source when one can't. A well-made secondary source carries a [context pointer](./Context%20pointer.md) back to its original — the summary that names the transcript it came from, the doc that names the file it describes — so when the account isn't enough, the reader can follow the pointer rather than work from the loss.
+但这两种失败都不能判 secondary source 死刑。context window 有限,primary source 又贵;没有摘要、报告和交接文档,什么都装不下。真正的功夫是知道哪些细节扛得住损耗——以及哪些扛不住时,回到 primary source 验证。一个做得好的 secondary source,带着一个指回原物的 [context pointer](./Context%20pointer.md)(上下文指针)——摘要里写明它出自哪份记录,文档里写明它描述的是哪个文件——当转述不够用时,读者可以顺着指针走,而不是对着残缺硬干。
 
 _Usage:_
 
-"The handoff doc says auth is done, but the new session keeps finding broken token refresh."
+"交接文档说 auth 已经完成,可新 session 老发现 token 刷新是坏的。"
 
-"The doc's a secondary source — the last session wrote down what it believed, not what's true. Have the new session run the auth tests and trust the primary source."
+"那份文档是 secondary source——上一个 session 写下的是它相信的,不是真的。让新 session 跑一遍 auth 测试,以 primary source 为准。"

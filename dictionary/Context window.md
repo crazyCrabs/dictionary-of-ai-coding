@@ -1,17 +1,17 @@
 ---
-description: Everything the model sees on each model provider request. Finite, model-specific, the only surface through which the model perceives.
+description: 模型在每次模型供应商请求中看到的一切。有限、因模型而异,是模型感知外界的唯一表面。
 ---
 
-Everything the [model](./Model.md) sees on each [model provider request](./Model%20provider%20request.md). Finite, model-specific, and the _only_ surface through which the model perceives anything.
+[model](./Model.md)(模型)在每次 [model provider request](./Model%20provider%20request.md)(模型供应商请求)中看到的一切。有限、因模型而异,而且是模型感知外界的唯一表面。
 
-It's a single sequence of [tokens](./Token.md): the [system prompt](./System%20prompt.md), the conversation so far, every [tool result](./Tool%20result.md) the [harness](./Harness.md) has fed back in. If something is in that sequence, the model can use it; if it isn't, the model doesn't know it exists — not your codebase, not the file you edited yesterday, not the instruction you gave three sessions ago. Anything outside the window has to be brought in, usually via a [tool call](./Tool%20call.md), before it can affect anything.
+它是单一的一条 [token](./Token.md) 序列:[system prompt](./System%20prompt.md)(系统提示)、到目前为止的对话,以及 [harness](./Harness.md)(宿主环境)反馈进来的每一条 [tool result](./Tool%20result.md)(工具结果)。在序列里的东西,model 就能用;不在序列里的,model 不知道它存在——你的代码库、你昨天改过的文件、你三个 session 之前给的指令,都是如此。窗口外的任何东西,都得先被带进来——通常通过一次 [tool call](./Tool%20call.md)——才能产生影响。
 
-Finite means it fills up. Every turn appends more — your messages, the model's responses, tool results — and a long [session](./Session.md) will eventually hit the limit, forcing [compaction](./Compaction.md) or [clearing](./Clearing.md). It also means everything in the window competes: each token you load is one less available for the rest, and content you didn't need still occupies the model's [attention](./Attention%20budget.md). The practical stance is to treat the window as a budget — load what the task needs, leave the rest out.
+有限意味着它会被填满。每个 [turn](./Turn.md) 都在追加内容——你的消息、model 的回答、tool result——一个长 [session](./Session.md) 终会撞上限,被迫 [compaction](./Compaction.md)(压实)或 [clearing](./Clearing.md)(清空)。有限也意味着窗口里的一切在竞争:你装入的每个 token,都是其余内容少掉的一个;你不需要的内容,照样占据着 model 的 [attention](./Attention%20budget.md)(注意力)。务实的姿态是把窗口当成预算——装任务需要的,其余留在窗外。
 
-_Avoid:_ "memory" — the context window is working state and doesn't persist across sessions. [Memory](./Memory%20system.md) is a separate concept layered on top.
+_避免:_ 把它叫作"memory"。context window 是工作状态,不跨 session 存续。[Memory](./Memory%20system.md)(记忆系统)是叠加在其上的另一个概念。
 
 _Usage:_
 
-"Can I just paste the whole monorepo into the prompt?"
+"我能把整个 monorepo 直接粘进提示里吗?"
 
-"The context window's 200k tokens — that's maybe a fifth of the repo. Pick the files the task touches, leave the rest behind a tool call."
+"context window 是 200k token,大概只够仓库的五分之一。挑出任务会碰的文件,其余的留在 tool call 后面。"

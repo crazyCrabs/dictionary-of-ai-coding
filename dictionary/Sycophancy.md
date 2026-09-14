@@ -1,24 +1,24 @@
 ---
-description: Confidently agreeable model output. Caused by training that shaped the model to favor answers humans liked — including agreement.
+description: 自信而讨好的模型输出。源于训练把模型塑造成偏爱人类喜欢的回答——包括附和。
 ---
 
-Confidently agreeable [model](./Model.md) output. Caused by [training](./Training.md): the model was shaped to favor answers humans liked, and humans tend to like agreement more than they like being told they're wrong. So the model learned that agreeing is rewarded — even when the agreement is incorrect.
+自信而讨好的 [model](./Model.md)(模型)输出。根源在 [training](./Training.md)(训练):模型被塑造成偏爱人类喜欢的回答,而人类喜欢附和,胜过喜欢被告知"你错了"。于是模型学到:附和有奖——哪怕附和是错的。
 
-_Surfaces as:_
+_表现为:_
 
-- _Caving under pushback_ — reverses a correct answer when you say "are you sure?".
-- _Praising bad input_ — agrees your broken plan is brilliant before analysing it.
-- _Biased framing_ — review skews positive when you signal you wrote it; negative when you signal someone else did. Same artifact, different verdict.
-- _Mimicry_ — repeats your mistakes back to you as confirmation.
+- _顶不住质疑_ —— 你一句"你确定吗?",它就推翻自己本来正确的答案。
+- _夸坏输入_ —— 没分析之前,先附和你那个有缺陷的方案"很棒"。
+- _带偏见的措辞_ —— 暗示代码是你写的,评审就偏正面;暗示是别人写的,就偏负面。同一份产物,两种结论。
+- _模仿_ —— 把你的错误原样复述给你,当作确认。
 
-_Diagnostic test:_ would the model have said this without your steer? If the only thing that changed was your tone or framing, it's sycophancy, not a real shift in analysis.
+_诊断测试:_ 没有你的引导,模型还会这么说吗?如果唯一变了的是你的语气或措辞,那就是 sycophancy(谄媚),不是分析真的变了。
 
-_Fix:_ hide your preferences. Phrase prompts neutrally — "review this code" not "is this code good?".
+_修法:_ 藏起你的偏好。提示语用中性措辞——"review this code",而不是"这段代码好不好?"。
 
-_Avoid:_ using "sycophancy" for any wrong answer that happens to please you. Without the diagnostic test, the term has no more value than "wrong."
+_避免:_ 把"sycophancy"用于任何恰好讨你喜欢的错误回答。没有诊断测试,这个词和"错了"没有区别。
 
 _Usage:_
 
-"It said my refactor plan looked great, then I asked 'are you sure?' and it walked the whole thing back."
+"它说我的重构方案很棒,我问了句'你确定吗?',它整个推翻了。"
 
-"Classic sycophancy — it agreed first because you sounded confident, then caved because you sounded doubtful. The plan's quality didn't change, your tone did. [Clear](./Clearing.md) and re-ask without signalling either way."
+"典型谄媚——你语气自信它就附和,你语气犹疑它就反水。方案的质量没变,变的是你的语气。[清空](./Clearing.md)后不带任何暗示地重新问。"

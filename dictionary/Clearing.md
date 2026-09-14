@@ -1,17 +1,17 @@
 ---
-description: Ending the current session and starting a fresh one. The next message begins with an empty session and an empty context window.
+description: 结束当前 session,开一个全新的。下一条消息从一个空 session 和空上下文窗口开始。
 ---
 
-Ending the current [session](./Session.md) and starting a fresh one. The next message begins with an empty session and an empty [context window](./Context%20window.md). Usually user-driven.
+结束当前 [session](./Session.md)(会话),开一个全新的。下一条消息从一个空 session 和一个空 [context window](./Context%20window.md)(上下文窗口)开始。通常由用户发起。
 
-Clearing is the cure for a polluted context. A session accumulates everything: failed attempts, wrong turns, stale [tool results](./Tool%20result.md), abandoned plans. The [model](./Model.md) re-reads all of it on every [turn](./Turn.md), and bad history drags on new work. Deep into a long session the [agent](./Agent.md) gets vaguer and less obedient — instructions you gave clearly get ignored, quality slips, and prodding it to do better doesn't help, because the noise it's wading through is still in its [context](./Context.md). Clearing removes the noise.
+clearing 是被污染 context 的解药。一个 session 会积累一切:失败的尝试、走错的路、过期的 [tool result](./Tool%20result.md)(工具结果)、被放弃的方案。[model](./Model.md)(模型)在每个 [turn](./Turn.md)(轮次)都重读这一切,坏历史拖累新工作。深陷长 session 时,[agent](./Agent.md)(智能体)越来越含糊、越来越不听话——明确给过的指令被无视,质量下滑,催它也没用,因为它蹚着的那片噪音还在它的 [context](./Context.md) 里。clearing 移除噪音。
 
-Clearing doesn't erase the conversation. Most [harnesses](./Harness.md) keep session history on your computer, so the transcript is still there to read or resume. What's gone is the agent's working state: the model is [stateless](./Stateless.md), so the new session knows nothing the old one knew. If the session holds decisions or progress the next one will need, have the agent write a [handoff artifact](./Handoff%20artifact.md) first, then start the new session by pointing at it.
+clearing 不抹掉对话记录。大多数 [harness](./Harness.md)(宿主环境)把 session 历史留在你的电脑上,记录还在,可以翻阅也可以恢复。消失的是 agent 的工作状态:model 是 [stateless](./Stateless.md)(无状态)的,新 session 对旧 session 知道的事一无所知。如果 session 里有下一个 session 需要的决定或进展,先让 agent 写一份 [handoff artifact](./Handoff%20artifact.md)(交接产物),再开新 session 并指向它。
 
-Compare [compaction](./Compaction.md), which summarises the session into the new context instead of starting empty. Clearing is the blunter tool: nothing carries over, including the junk.
+对比 [compaction](./Compaction.md)(压实):它把 session 摘要进新 context,而不是从空开始。clearing 是更钝的工具:什么都不带走,包括垃圾。
 
 _Usage:_
 
-"It's stuck looping on the failing test."
+"它卡在那个失败的测试上打转。"
 
-"Just clear it — start a fresh session with the plan doc and the test file. No point fighting the existing context."
+"直接 clear——开个新 session,带上方案文档和测试文件。跟现有的 context 较劲没有意义。"

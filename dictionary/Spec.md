@@ -1,15 +1,15 @@
 ---
-description: A handoff artifact describing a multi-session piece of work — what's being built, not how each session does its share. Made of tickets.
+description: 描述一项跨多个 session 的工作的交接产物——建的是什么,而不是每个 session 怎么做它那份。由 ticket 组成。
 ---
 
-A [handoff artifact](./Handoff%20artifact.md) describing a multi-[session](./Session.md) piece of work — what's being built, not how each session does its share. Mutates as work progresses. Made of [tickets](./Ticket.md).
+描述一项跨多个 [session](./Session.md)(会话)的工作的 [handoff artifact](./Handoff%20artifact.md)(交接产物)——写的是建的是什么,不是每个 session 怎么做它那一份。随工作推进而演化。由 [ticket](./Ticket.md) 组成。
 
-The spec exists because sessions are disposable and big work isn't. Anything that takes more than one [context window](./Context%20window.md) of effort needs a home outside the [context](./Context.md) — somewhere in the agent's [environment](./Environment.md) that survives [clearing](./Clearing.md), whether that's a file in the repo, a GitHub issue, or an issue tracker the agent can reach. The spec is that home: the goal, the constraints, the decisions made so far, and the list of tickets with their status. Any fresh session can read it and know where the work stands without inheriting the previous session's accumulated noise.
+spec 存在的理由是:session 是一次性的,大工作不是。任何超过一个 [context window](./Context%20window.md) 工作量的事情,都需要一个 [context](./Context.md)(上下文)之外的家——agent [environment](./Environment.md)(环境)里某个能在 [clearing](./Clearing.md)(清空)后幸存的地方,可以是仓库里的文件、GitHub issue,或 agent 够得着的 issue tracker。spec 就是那个家:目标、约束、到目前为止的决定、ticket 清单及其状态。任何一个新 session 读它,就能知道工作进行到哪,而不必继承上一个 session 积累的噪音。
 
-Specs come in recognisable styles, mostly inherited from how teams already write things down. A _product requirements document_ (PRD) leans toward the user-facing what and why — features, behaviour, acceptance criteria. A _design doc_ or _RFC_ leans technical — the chosen approach, the alternatives rejected, the trade-offs. At the small end, a plain `plan.md` with a checklist of tickets does the same job for a multi-session feature. The style matters less than the role: for the [agent](./Agent.md), each of these is the same thing — the durable statement of intent it reads at the start of every session.
+spec 有几种一眼可辨的风格,大多继承自团队本来记录事情的方式。_product requirements document_(PRD,产品需求文档)偏向面向用户的"是什么、为什么"——功能、行为、验收标准。_design doc_ 或 _RFC_ 偏技术——选定的方案、被否决的备选、权衡取舍。往小了说,一个带 ticket 清单的朴素 `plan.md`,对一个跨 session 的功能干的是同一件事。风格没有角色重要:对 [agent](./Agent.md)(智能体)来说,这些全是同一个东西——它每个 session 开始时都要读的那份持久的意图声明。
 
 _Usage:_
 
-"Should this all be one session?"
+"这些活该全塞进一个 session 吗?"
 
-"No, write it up as a spec — break it into tickets, run each one in its own session. Trying to do the whole thing in a single context will hit the [dumb zone](./Smart%20zone.md) before you're halfway."
+"不,写成一份 spec——拆成 ticket,每条在自己的 session 里跑。想在一个 context 里干完全部,半路就进 [dumb zone](./Smart%20zone.md) 了。"

@@ -20,6 +20,12 @@ const LINK_RE = /\[([^\]]+)\]\(\.\/([^)]+)\.md\)/g;
 
 type Section = { heading: string; terms: string[] };
 
+// Working copies may have CRLF line endings (git autocrlf); normalize to LF so
+// marker matching and frontmatter stripping work on any checkout.
+function readLF(path: string): string {
+  return readFileSync(path, "utf8").replace(/\r\n/g, "\n");
+}
+
 function fail(msg: string): never {
   console.error(msg);
   process.exit(1);
@@ -93,12 +99,12 @@ function rewriteLinks(body: string): string {
 }
 
 function main(): void {
-  const template = readFileSync(TEMPLATE, "utf8");
+  const template = readLF(TEMPLATE);
   if (!template.includes(MARKER)) fail(`Template missing ${MARKER} marker`);
   if (!template.includes(TOC_MARKER))
     fail(`Template missing ${TOC_MARKER} marker`);
 
-  const sections = parseCurriculum(readFileSync(CURRICULUM, "utf8"));
+  const sections = parseCurriculum(readLF(CURRICULUM));
 
   const seen = new Set<string>();
   const parts: string[] = [];
@@ -110,7 +116,7 @@ function main(): void {
       const entryPath = join(DICT_DIR, `${term}.md`);
       let body: string;
       try {
-        body = readFileSync(entryPath, "utf8");
+        body = readLF(entryPath);
       } catch {
         fail(
           `Curriculum.md references "${term}" but ${entryPath} does not exist`

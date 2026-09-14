@@ -1,19 +1,19 @@
 ---
-description: The atomic unit a model reads and writes. Roughly word-sized but not exactly. Context window size, cost, and latency all count tokens.
+description: 模型读写的原子单位。大约一个词大小,但不精确。上下文窗口大小、成本和延迟都按 token 计。
 ---
 
-The atomic unit a [model](./Model.md) reads and writes. Roughly word-sized but not exactly — common words are one token, rare or long ones split into several. [Context window](./Context%20window.md) size, cost, and latency are all counted in tokens.
+[model](./Model.md)(模型)读写的原子单位。大约一个词大小,但不精确——常见词是一个 token,罕见或长的词拆成几个。[context window](./Context%20window.md)(上下文窗口)大小、成本和延迟都以 token 计。
 
-Text becomes tokens via a tokenizer: a fixed vocabulary of tens of thousands of fragments, learned before [training](./Training.md), that splits any input into a sequence of vocabulary entries. The model never sees characters or words — every piece of text is converted to tokens on the way in, and [next-token prediction](./Next-token%20prediction.md) produces output one token at a time on the way out.
+文本经过 tokenizer(分词器)变成 token:一个几万条片段的固定词表,在 [training](./Training.md)(训练)之前学得,把任何输入切成一串词表条目。模型从不看到字符或词——每段文本进模型前都被转成 token,[next-token prediction](./Next-token%20prediction.md)(下一词元预测)在出口一次一个 token 地产出。
 
-As a rule of thumb, a token is about three-quarters of an English word, so a thousand tokens is roughly 750 words. Code is less predictable: common keywords and idioms tokenize compactly, while generated identifiers, hashes, base64 blobs, and minified output split into many tokens per "word". The pattern: text that appeared often in the tokenizer's source material gets short, efficient encodings; text that didn't gets chopped into many small pieces. A hash like `a3f9c2e1` never appeared anywhere, so it splits into many tokens, while `function` is one. This is why a small-looking file full of unusual strings can occupy a surprising share of the context window.
+经验法则:一个 token 约等于四分之三个英文词,所以一千 token 大约 750 词。代码更不可预测:常见关键字和习语切得很紧凑,而生成的标识符、哈希、base64 块和压缩产物,每个"词"要拆成很多 token。规律是:在 tokenizer 的原料里出现频繁的文本,得到又短又高效的编码;没出现过的被剁成很多小块。像 `a3f9c2e1` 这样的哈希从没在任何地方出现过,所以拆成很多 token,而 `function` 是一个。这就是为什么一个看起来很小的文件,装满不寻常的字符串,能占掉上下文窗口里惊人的一块。
 
-Tokens are the unit everything else is measured in. Cost is per token — providers bill [input tokens](./Input%20tokens.md) and [output tokens](./Output%20tokens.md) separately. Speed is tokens per second, since output is generated one token at a time. And the context window is a fixed number of tokens, so the token count of your files decides how much fits.
+token 是其他一切计量所用的单位。成本按 token 计——供应商把 [input tokens](./Input%20tokens.md)(输入 token)和 [output tokens](./Output%20tokens.md)(输出 token)分开计费。速度是每秒 token 数,因为输出一次生成一个 token。而上下文窗口是固定数量的 token,所以你文件的 token 数决定了装得下多少。
 
-_Avoid:_ "word" — token boundaries don't match word boundaries, and tokens-per-second / tokens-per-dollar are the units that actually matter.
+_避免:_ 把它叫"word"(词)——token 的边界和词的边界不重合,而且 tokens-per-second / tokens-per-dollar 才是真正有用的单位。
 
 _Usage:_
 
-"How big is this prompt going to be?"
+"这个提示会有多大?"
 
-"Run it through the tokenizer — the schema's compact but the JSON keys are weird, so they'll split into more tokens than you think."
+"丢给 tokenizer 跑一下——schema 很紧凑,但 JSON 键很怪,拆出来的 token 会比你以为的多。"

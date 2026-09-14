@@ -1,15 +1,15 @@
 ---
-description: The provider-side store that lets consecutive requests skip re-processing a shared prefix, billing those tokens at a lower rate.
+description: 供应商侧的存储,让连续的请求跳过重复处理共享前缀,这部分 token 按更低的费率计费。
 ---
 
-The [provider](./Model%20provider.md)-side store that lets consecutive [model provider requests](./Model%20provider%20request.md) skip re-processing a shared prefix. When the start of a request matches the start of a recent one — same [system prompt](./System%20prompt.md), same history up to some point — the provider reuses its prior work and bills those [tokens](./Token.md) as [cache tokens](./Cache%20tokens.md) at a much lower rate.
+[provider](./Model%20provider.md)(模型供应商)侧的存储,让连续的 [model provider request](./Model%20provider%20request.md)(模型供应商请求)跳过对共享前缀的重复处理。当一个请求的开头与最近某个请求的开头一致——同样的 [system prompt](./System%20prompt.md)(系统提示)、同样到某处为止的历史——provider 复用之前的处理结果,把这些 [token](./Token.md)(词元)按 [cache tokens](./Cache%20tokens.md)(缓存 token)计费,费率低得多。
 
-The cache pays off because sessions grow append-only. Every request re-sends the whole history as [input tokens](./Input%20tokens.md) (see that entry for why), and in a normal [session](./Session.md) the history only changes at the end — each request is the previous one plus a few new messages. The provider processes the long shared beginning once, stores the result, and picks up from where the prefix ends. Without the cache, a 50-[turn](./Turn.md) session would pay to re-process turn one fifty times.
+这笔缓存之所以划算,是因为 session 只增不改。每个请求都把整个历史作为 [input tokens](./Input%20tokens.md) 重发(为什么,见该词条),而正常的 [session](./Session.md)(会话)里,历史只在末尾变化——每个请求就是上一个请求加几条新消息。provider 把长长的共享开头处理一次,存下结果,从词缀结束处继续。没有缓存,一个 50 个 [turn](./Turn.md) 的 session,要为第一个 turn 的重处理付五十次钱。
 
-Caches also expire. How long an entry stays warm varies per model provider — typically minutes, not hours. Leave a session idle past the window and the next request rebuilds the prefix at full price once before caching resumes. This is mostly a [harness](./Harness.md) builder's concern; as a user, the visible effect is that requests after a long pause cost more than the ones before it.
+缓存也会过期。条目保温多久,因 model provider 而异——典型是分钟级,不是小时级。session 闲置超过窗口,下一个请求会把前缀按全价重建一次,然后缓存恢复。这主要是 [harness](./Harness.md)(宿主环境)构建者要操心的事;作为用户,可见的影响是:长暂停之后的那个请求,比之前的都贵。
 
 _Usage:_
 
-"Why did the bill spike halfway through the session?"
+"为什么账单在 session 中途飙升?"
 
-"Harness started injecting the current time into the system prompt every turn. Prefix cache breaks at the first changed token, so every request after that billed at full rate."
+"harness 开始在每个 turn 往 system prompt 里注入当前时间。前缀在第一个变化的 token 处断掉,之后的每个请求都按全价计费。"

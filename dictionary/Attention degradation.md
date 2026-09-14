@@ -1,17 +1,17 @@
 ---
-description: As a session grows, each token's attention budget spreads across more competitors; signal on meaningful relationships shrinks.
+description: session 变长时,每个 token 的注意力预算摊给更多竞争者;重要关系上的信号变小。
 ---
 
-As a [session](./Session.md) grows, each [token](./Token.md)'s [attention budget](./Attention%20budget.md) is spread across more competitors. The signal on any one [meaningful relationship](./Attention%20relationship.md) shrinks; noise from irrelevant [context](./Context.md) crowds in. Same [model](./Model.md), same [parameters](./Parameters.md) — just more mouths to feed from the same plate. Cause of the smart zone / dumb [zone effect](./Smart%20zone.md).
+[session](./Session.md)(会话)变长时,每个 [token](./Token.md)(词元)的 [attention budget](./Attention%20budget.md)(注意力预算)被摊给更多竞争者。任何一段[有意义关系](./Attention%20relationship.md)上的信号变小;无关 [context](./Context.md) 的噪音挤进来。同一个 [model](./Model.md),同一份 [parameters](./Parameters.md)——只是同一盘菜要喂的嘴更多了。smart zone / dumb [zone 现象](./Smart%20zone.md)的成因。
 
-It presents as the model getting worse mid-session: constraints it followed for an hour start slipping, it re-asks things it was told, it writes code that ignores a file it read earlier. Nothing about the model changed — the only variable is how much context it's now attending over.
+它表现为模型在 session 中途变差:遵守了一个小时的约束开始松脱,它重新问已经被告知过的事,它写出无视早前读过文件的代码。模型本身没有任何变化——唯一的变量,是它此刻正在关注的 context 有多少。
 
-It's gradual, which is what makes it hard to catch from inside the session. There's no error and no threshold; each [turn](./Turn.md) is only slightly worse than the last, and by the time the slips are obvious you've been in the dumb zone for a while.
+它是渐变的,这正是从 session 内部难以察觉的原因。没有报错,没有阈值;每个 [turn](./Turn.md)(轮次)只比上一个差一点点,等你明显看出滑落时,你已经在 dumb zone 里待了一阵了。
 
-You recover by removing context, not adding more. Re-pasting the ignored instruction adds another competitor to the same crowded window and helps only briefly. What works: [clear](./Clearing.md) and reload only what the task needs, or [compact](./Compaction.md), or [hand off](./Handoff.md) to a fresh session. Treat declining instruction-following as a signal about context length, not about the model.
+恢复靠移除 context,不靠添加。把被无视的指令重贴一遍,只是往已经拥挤的窗口里再加一个竞争者,只管一小会儿。有效的是:[clear](./Clearing.md)(清空)后只重新装载任务需要的部分,或者 [compact](./Compaction.md)(压实),或者 [hand off](./Handoff.md)(交接)给一个新 session。把指令遵循度的下降当作 context 长度的信号,而不是模型的信号。
 
 _Usage:_
 
-"It's deep in the dumb zone — inventing generics that aren't in the type file."
+"它深深陷在 dumb zone 里了——编造类型文件里不存在的泛型。"
 
-"Attention degradation. The type definitions are still in context, but the signal on them is buried under everything we've added since. Clear and reload."
+"attention degradation。类型定义还在 context 里,但它们上面的信号,被我们之后塞进去的所有东西埋了。清空重载。"

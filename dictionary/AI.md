@@ -1,27 +1,27 @@
 ---
-description: A moving label, not a technology. Points at whatever computers can newly, impressively do — right now, large language models.
+description: 一个会移动的标签,不是一项技术。指向计算机新近能做到的、令人惊叹的事——当下,是大语言模型。
 ---
 
-A moving label, not a technology. "AI" doesn't name a fixed thing the way [model](./Model.md) or [token](./Token.md) does — it points at whatever computers can newly, impressively do. Right now it points at large language models. It has pointed at very different things before:
+一个会移动的标签,不是一项技术。"AI"不像 [model](./Model.md)(模型)或 [token](./Token.md)(词元)那样命名一个固定的东西——它指向的是计算机新近能做到的、令人惊叹的事。当下它指向大语言模型。它以前指向过非常不同的东西:
 
-| Era       | What "AI" meant                                                                                       |
-| --------- | ----------------------------------------------------------------------------------------------------- |
-| 1950s     | Symbolic reasoning — theorem provers, checkers programs.                                              |
-| 1960s–70s | Rule-based symbolic programs — ELIZA, SHRDLU.                                                         |
-| 1980s     | Expert systems — thousands of hand-written if-then rules encoding human expertise.                    |
-| 1990s     | Game-tree search — Deep Blue beating Kasparov (1997). Researchers avoided the word "AI" entirely      |
-| 2000s     | Statistical machine learning — spam filters, recommenders. Still sold as "machine learning", not "AI" |
-| 2010s     | Deep learning — image recognition (AlexNet, 2012), AlphaGo (2016).                                    |
-| 2020s     | Large language models — ChatGPT (2022) made "AI" mean chatbots                                        |
+| 年代      | "AI" 指什么                                                                   |
+| --------- | ----------------------------------------------------------------------------- |
+| 1950s     | 符号推理——定理证明器、跳棋程序。                                              |
+| 1960s–70s | 基于规则的符号程序——ELIZA、SHRDLU。                                           |
+| 1980s     | 专家系统——成千上万条手写的 if-then 规则,编码人类专家知识。                    |
+| 1990s     | 博弈树搜索——深蓝(Deep Blue)击败卡斯帕罗夫(1997)。研究者当时完全避开"AI"这个词 |
+| 2000s     | 统计机器学习——垃圾邮件过滤器、推荐系统。当时仍以"机器学习"之名出售,不叫"AI"   |
+| 2010s     | 深度学习——图像识别(AlexNet,2012)、AlphaGo(2016)。                             |
+| 2020s     | 大语言模型——ChatGPT(2022)让"AI"意味着聊天机器人                               |
 
-The pointer moves by a known mechanism, sometimes called the AI effect: once a technique works reliably, it gets renamed — it's "just" search, "just" statistics — and "AI" slides forward to the next unsolved thing. The observation is old. Bertram Raphael put it this way in 1971: "AI is a collective name for problems which we do not yet know how to solve properly by computer." Larry Tesler's version, from around 1979: "Intelligence is whatever machines haven't done yet."
+指针的移动有一个已知的机制,有时被称为 AI effect(AI 效应):一项技术一旦可靠地跑通,就会被改名——它"只是"搜索、"只是"统计——而"AI"滑向下一个未解决的问题。这个观察很老了。Bertram Raphael 在 1971 年这么说:"AI 是一群我们还不知道如何用计算机妥善解决的问题的统称。"Larry Tesler 的版本,约 1979 年:"智能就是机器还没做成的事。"
 
-This is why conversations about AI so often talk past each other. A claim like "AI can't reason" or "AI is overhyped" carries a hidden timestamp — it may be about expert systems, about 2010s image classifiers, or about last month's LLM, and each reference supports a different conclusion. When a discussion about AI stalls, the fix is usually to swap the word for whichever precise term is actually meant: the model, the [harness](./Harness.md), the [agent](./Agent.md), the [context](./Context.md) it was given.
+这就是为什么关于 AI 的对话常常各说各话。"AI 不会推理""AI 被过度炒作"这类断言带着一个隐藏的时间戳——它可能说的是专家系统、2010 年代的图像分类器,或上个月的大语言模型,每种所指支持的结论都不同。当关于 AI 的讨论僵住时,解法通常是把这个词换成你实际所指的精确术语:模型本身、[harness](./Harness.md)(宿主环境)、[agent](./Agent.md)(智能体)、或给它的 [context](./Context.md)(上下文)。
 
-_Avoid:_ "AI" in any technical claim — name the part you mean instead. "AI coding" as a label for the practice is fine; "the AI is hallucinating" is not.
+_避免:_ 在任何技术性断言里使用"AI"——直接说出你指的那个部件。把"AI 编程"当作实践的标签没问题;"AI 在产生幻觉"不行。
 
 _Usage:_
 
-"The CTO wants to know whether AI could handle the triage queue."
+"CTO 想知道 AI 能不能处理 triage 队列。"
 
-"Translate that before scoping it — she means an LLM in a harness with access to the ticket system. 'AI' on its own isn't a spec."
+"先把这句话翻译成具体方案再评估——她的意思是:一个装在 harness 里、能访问工单系统的 LLM。"AI"本身不是一份 spec。"

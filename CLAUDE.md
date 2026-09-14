@@ -4,7 +4,9 @@ Links to other entries should only have a link on the first occurrence. I.e. if 
 
 New entries must be added to dictionary/, and found a place in internal/Curriculum.md
 
-Each entry must have a `description` field in the frontmatter. Each description must be less than 140 characters long.
+Each entry must have a `description` field in the frontmatter. Each description must be less than 140 characters long. For Chinese entries, fewer than 140 Chinese characters.
+
+Entries translated into Chinese must follow `internal/translation.md`.
 
 Co-locate each concept with the real-life problem it explains. Where a term has a recognisable symptom — a felt failure or surprise the reader has likely hit — weave that symptom into the prose near the definition, so the reader recognises their own incident in the entry. Woven prose, not a named section. Vocabulary/building-block terms (e.g. Token, Parameters) have no symptom; don't force a fake one.
 

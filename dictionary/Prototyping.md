@@ -1,19 +1,19 @@
 ---
-description: Having the agent build a quick, rough version when conversation is too low-fidelity and you need a real artifact to talk about.
+description: 让 agent 造一个快速粗糙的版本——当对话保真度不够、你需要一个真实产物来讨论时。
 ---
 
-Having the [agent](./Agent.md) build a quick, rough version of something, for when conversation is too low-fidelity and you need a real artifact to talk about.
+让 [agent](./Agent.md)(智能体)造一个快速粗糙的版本——用在对话保真度不够、你需要一个真实产物来讨论的时候。
 
-[Grilling](./Grilling.md) resolves design decisions in conversation. Conversation is cheap, but it's low-fidelity: some questions can't be answered in words — how an interaction feels, whether an API shape is ergonomic in real calling code, whether the layout works at real data sizes. The interview hits a question and your honest answer is "I don't know, I'd have to see it." Past that point the discussion circles. Instead, have the agent build the thing, look at it, and come back to the conversation with an answer.
+[grilling](./Grilling.md) 在对话里解决设计决定。对话便宜,但保真度低:有些问题用话答不了——一次交互的手感如何、一个 API 形状在真实调用代码里顺不顺手、一个布局在真实数据量下撑不撑得住。访谈推进到某个问题,你诚实的回答是"不知道,我得看到它才行"。过了这个点,讨论开始原地打转。此时该做的是:让 agent 把东西造出来,你看一眼,带着答案回到对话里。
 
-Agents lower the cost of building, which is what makes this practical. A rough version that used to take a day to mock up now takes minutes, so it's worth doing routinely. It's a [human-in-the-loop](./Human-in-the-loop.md) technique: the prototype is there for you to react to.
+agent 把造东西的成本打了下来,这件事才变得可行。以前要花一天糊出来的粗糙版本,现在几分钟就有,所以值得常态化地做。这是一门 [human-in-the-loop](./Human-in-the-loop.md)(人在回路)的技术:原型就是摆在那里让你做反应的。
 
-You usually don't stop at one look. Iterate with the prototype — react, ask for a change, react again — so each round resolves another decision against the real artifact, at a higher fidelity than conversation allows.
+通常你不会只看一眼。对着原型迭代——反应、要一个改动、再反应——每一轮都对着真实产物解决掉一个决定,保真度高于对话所能。
 
-A prototype doesn't have to be all-scrappy. You can build the pieces you're actually evaluating to production quality, so when the decision lands, the component or API you reacted to can transfer into the real codebase. This makes prototyping essential material for the [spec](./Spec.md) to reference.
+原型不必全是糙的。你可以把你真正在评估的部分做成生产质量,这样决定落定之时,你对着它做反应的那个组件或 API,可以直接搬进真正的代码库。这让 prototyping(原型化)成为 [spec](./Spec.md) 值得引用的素材。
 
 _Usage:_
 
-"We've spent half an hour arguing about whether the wizard should be one page or three steps."
+"我们花了半小时争论向导该做成一页还是三步。"
 
-"Words won't settle it — have the agent prototype both. We'll click through them and know in five minutes."
+"嘴上是争不出来的——让 agent 把两种都原型出来。点一圈,五分钟见分晓。"

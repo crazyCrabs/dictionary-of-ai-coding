@@ -1,17 +1,17 @@
 ---
-description: A handoff artifact scoping one session of work. Stands alone or hangs off a spec. Can block or be blocked by sibling tickets.
+description: 圈定一个 session 工作量的交接产物。可独立存在,也可挂在 spec 下。ticket 之间可以互相阻塞。
 ---
 
-A [handoff artifact](./Handoff%20artifact.md) scoping one [session](./Session.md) of work. Stands alone, or hangs off a [spec](./Spec.md) as one of its children. Tickets can block or be blocked by sibling tickets, so the order of work falls out of their dependency graph rather than a linear plan.
+圈定一个 [session](./Session.md)(会话)工作量的 [handoff artifact](./Handoff%20artifact.md)(交接产物)。可以独立存在,也可以作为子项挂在 [spec](./Spec.md) 下。ticket 之间可以互相阻塞、或被兄弟 ticket 阻塞,于是工作的次序从依赖图里自然浮现,而不是来自一份线性计划。
 
-The defining constraint is the size: one session. A ticket should be completable before the session drifts out of the [smart zone](./Smart%20zone.md) — and that constraint is testable. If sessions on your tickets routinely degrade before the work is done, the tickets are too big; split them. If each session spends most of its [context](./Context.md) on setup before doing five minutes of work, they're too small; merge them.
+定义性的约束是尺寸:一个 session。一张 ticket 应该能在 session 滑出 [smart zone](./Smart%20zone.md) 之前完成——而且这个约束是可检验的。如果你的 ticket 上的 session 常常活没干完就先劣化,ticket 太大了;拆。如果每个 session 大部分 [context](./Context.md) 花在准备工作上、真正的活只干了五分钟,ticket 太小了;合。
 
-A good ticket is written for a reader with no other context. The goal, the acceptance criteria, and [context pointers](./Context%20pointer.md) to the relevant files and decisions — enough that the session can start working without re-deriving what the last one knew.
+好的 ticket 是写给一个没有其他 context 的读者的。目标、验收标准、指向相关文件和决定的 [context pointer](./Context%20pointer.md)(上下文指针)——足够让 session 不必重新推导上一个 session 已经知道的东西就能开工。
 
-The dependency graph is also what unlocks parallelism. Independent tickets — the leaves of the graph — can each run in their own session at the same time. This is an effective way of running multiple agents at once.
+依赖图也是并行化的开关。互相独立的 ticket——图上的叶子——可以各自在自己的 session 里同时跑。这是同时运行多个 agent 的有效方式。
 
 _Usage:_
 
-"Where do I start on the migration spec?"
+"迁移 spec 从哪儿开工?"
 
-"Look at the ticket graph — the schema change blocks the backfill, the backfill blocks the API switch. Pick a leaf and run a session on it."
+"看 ticket 图——schema 变更阻塞回填,回填阻塞 API 切换。挑一张叶子,给它开一个 session。"

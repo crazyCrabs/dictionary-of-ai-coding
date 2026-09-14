@@ -1,15 +1,15 @@
 ---
-description: The shared understanding of what's being built, held in common between user and agent but separate from any asset.
+description: 用户与 agent 共有、但不依附于任何产物的"在建之物"的共同理解。
 ---
 
-The shared understanding of what's being built, held in common between user and [agent](./Agent.md) but separate from any asset. Brooks' term (_The Design of Design_): the conversation, [handoff artifacts](./Handoff%20artifact.md), and the code are all assets that try to capture or reach the design concept, but none of them _are_ it. Quality of the design concept is felt through the quality of the conversation that built it.
+关于在建之物的共同理解,为用户和 [agent](./Agent.md)(智能体)所共有,但不依附于任何产物。Brooks 的术语(《The Design of Design》):对话、[handoff artifact](./Handoff%20artifact.md)(交接产物)和代码,都是试图捕捉或抵达设计概念(design concept)的产物,但没有一样*就是*它。设计概念的质量,从孕育它的那段对话的质量里感觉得到。
 
-The term names the gap behind a familiar frustration: the agent writes exactly what you asked for and it's still wrong. The usual cause is that you hadn't fully figured out what you wanted. The design concept wasn't finished in your own head — your prompt captured the parts you'd worked out, and was silent on the parts you hadn't. The agent filled those silences with its own assumptions, because there was nothing to align with. Nothing malfunctioned. There was no shared design concept, because there wasn't yet a whole one to share.
+这个词命名了一个熟悉挫败背后的缺口:agent 一字不差地写出了你要的东西,结果还是错的。通常的原因是,你自己还没完全想清楚要什么。设计概念在你脑子里还没完工——你的提示词捕获了你已经想通的部分,对没想通的部分保持沉默。agent 用自己的假设填了那些沉默,因为没有东西可供对齐。没有任何东西出故障。只是不存在共同的设计概念,因为一个完整的设计概念还不存在,无从分享。
 
-You can tell a design concept is shared the same way you can with a colleague: the other party starts answering questions you haven't asked yet the way you would. Until then, the work is conversation — [grilling](./Grilling.md) is the deliberate version — and writing a [spec](./Spec.md) too early just captures the misalignment in a more durable asset. The design concept also moves as you learn; assets lag it, which is why a spec faithful to last week's understanding can still mislead this week's session.
+判断设计概念是否共有,和判断同事之间是否默契用的是同一招:对方开始替你回答你还没问的问题,而且答得跟你一样。在那之前,工作就是对话——[grilling](./Grilling.md) 是它的刻意版本——而过早写下 [spec](./Spec.md),只是把没对齐的东西固化进一个更耐久的产物。设计概念还会随你的学习而移动;产物滞后于它,所以一份忠实于上周理解的 spec,照样能误导这一周的 session。
 
 _Usage:_
 
-"It's writing exactly what I asked for and it's still wrong."
+"它一字不差地按我说的写了,结果还是错的。"
 
-"You don't share a design concept yet — it's filling gaps with assumptions. Keep talking until cancellation, refunds, and partial fulfilment all line up between you before you let it write a spec."
+"你们还没有共享一个 design concept——它在用假设填空。继续聊,直到取消、退款、部分履约这些在你俩之间全部对齐,再放手让它写 spec。"
