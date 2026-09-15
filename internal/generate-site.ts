@@ -404,7 +404,7 @@ const html = `<!doctype html>
     </div>
     <div id="searchCount"></div>
     <button id="infoBtn" class="fab" title="关于">i</button>
-    <div id="hint">拖动旋转 · 滚轮缩放 · 拖节点移动 · 点击节点查看 · 搜索时无关节点自动隐藏</div>
+    <div id="hint">拖动旋转 · 滚轮缩放 · 悬停查看关联 · 点击聚焦 · 搜索时无关节点自动隐藏</div>
   </div>
   <div id="panel">
     <div id="panelInner"></div>
@@ -436,8 +436,11 @@ const html = `<!doctype html>
 
   var panelInner = document.getElementById("panelInner");
   var current = null;
+  var focused = false; // true once clicked / deep-linked / prev-next (graph radiates links)
   var collapsed = true;
   var neighbors = {};
+  var hoverNode = null; // transient highlight while the pointer is over a node
+  var hoverNb = {};
   var searchFilter = null; // map of visible node ids while searching
 
   /* ---------- grey palette (reference-site aesthetic) ---------- */
@@ -454,9 +457,33 @@ const html = `<!doctype html>
   }
 
   function refreshLinks() {
-    Graph.linkColor(Graph.linkColor());
-    Graph.linkWidth(Graph.linkWidth());
-    Graph.linkDirectionalParticles(Graph.linkDirectionalParticles());
+    // Re-set the accessors so the library recomputes every link's look. Guard
+    // with try/catch: during boot the library internals may not exist yet and
+    // an early call can throw; the one-shot boot refresh retries later.
+    // Only call this on state changes (select / hover / search) - see the
+    // onEngineStop comment for why an engine-driven refresh loop is forbidden.
+    try {
+      Graph.linkColor(Graph.linkColor());
+      Graph.linkWidth(Graph.linkWidth());
+      Graph.linkDirectionalParticles(Graph.linkDirectionalParticles());
+    } catch (e) {}
+  }
+  // Every refresh re-sets the link accessors: the library rebuilds the links
+  // and restarts its engine (a multi-second churn of ~4MB/frame that lingers
+  // until a major GC). Hover and search fire far faster than that, so debounce
+  // them: a pointer sweep across many nodes collapses into one refresh once
+  // the target settles instead of one per node.
+  var refreshTimer = null;
+  function refreshLinksSoon() {
+    if (refreshTimer) clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(function () {
+      refreshTimer = null;
+      refreshLinks();
+    }, 200);
+  }
+  function refreshLinksNow() {
+    if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = null; }
+    refreshLinks();
   }
 
   var labelTexCache = {};
@@ -532,9 +559,11 @@ const html = `<!doctype html>
       opacity: 0,
     });
     var sprite = new THREE.Sprite(lmat);
-    // Sized so glyphs stay legible on screen (~6 CSS px in the narrow preview
-    // pane, larger full-screen); reference-site labels scale with their node.
-    sprite.scale.set(lt.w / 4, lt.h / 4, 1);
+    // Label size scales with the node (glyph height ~1/3 of the sphere
+    // diameter): dense spread views stay uncluttered while focused views stay
+    // legible, matching how the reference site sizes labels with their node.
+    var S0 = nodeRadius(n) / 80;
+    sprite.scale.set(lt.w * S0, lt.h * S0, 1);
     sprite.visible = false;
     grp.add(stroke);
     grp.add(mesh);
@@ -545,6 +574,7 @@ const html = `<!doctype html>
     n.__mesh = mesh;
     n.__mat = mat;
     n.__sprite = sprite;
+    n.__lt = lt;
     n.__a = 0.9; // start visible so nodes never begin invisible
     n.__s = baseVal(n);
     // Sync materials right away: opacity:0 defaults would leave the node
@@ -556,32 +586,30 @@ const html = `<!doctype html>
   }
 
   // Ease every node towards its target opacity/scale each frame: search
-  // filtering fades nodes in/out instead of popping them.
+  // filtering fades nodes in/out instead of popping them, and hover/selection
+  // emphasis is smooth as well.
   function animateNodes() {
+    var act = activeState();
     nodes.forEach(function (n) {
       // The graph library builds node objects during its own first render,
       // which can happen after this loop's first frame - guard against it so
       // the loop never dies before every node has its meshes.
       if (!n.__mesh) return;
       var hidden = isHidden(n);
-      var isSel = !!(current && n.id === current.index);
-      var isNb = !!(current && neighbors[n.id]);
+      var isSel = !!(act && n.id === act.id);
+      var isNb = !!(act && act.nb[n.id]);
       var isMatch = !!(searchFilter && searchFilter[n.id]);
       var aTarget = hidden
         ? 0
-        : isSel
-          ? 1
-          : searchFilter
-            ? (isMatch ? 1 : 0)
-            : isNb
-              ? 0.95
-              : current
-                ? 0.3
-                : 0.95;
+        : searchFilter
+          ? (isMatch ? 1 : 0)
+          : act
+            ? (isSel ? 1 : isNb ? 0.95 : 0.3)
+            : 0.95;
       var sTarget = hidden ? 0.0001 : baseVal(n) * (isSel ? 2 : 1);
       n.__a += (aTarget - n.__a) * 0.13;
       if (aTarget === 0 && n.__a < 0.008) n.__a = 0;
-      if (aTarget === 1 && n.__a > 0.992) n.__a = 1;
+      if (aTarget >= 1 && n.__a > 0.992) n.__a = 1;
       n.__s += (sTarget - n.__s) * 0.13;
       var r = Math.cbrt(Math.max(n.__s, 1e-6)) * R_NODE;
       n.__mesh.scale.setScalar(r);
@@ -590,10 +618,13 @@ const html = `<!doctype html>
       n.__stroke.scale.setScalar(r * 1.22);
       n.__strokeMat.opacity = n.__a * 0.9;
       var showLabel =
-        !hidden && n.__a > 0.5 && (isSel || (searchFilter ? isMatch : isNb));
+        !hidden && n.__a > 0.5 && (isSel || isNb || !!(searchFilter && isMatch));
       n.__sprite.visible = showLabel;
       n.__sprite.material.opacity = n.__a;
-      n.__sprite.position.y = r + 8; // label sits right above the node
+      // Keep the label glued right above the sphere, sized with the node.
+      var S = r / 80;
+      n.__sprite.scale.set(n.__lt.w * S, n.__lt.h * S, 1);
+      n.__sprite.position.y = r * 1.6;
     });
     requestAnimationFrame(animateNodes);
   }
@@ -614,10 +645,12 @@ const html = `<!doctype html>
       var s = typeof l.source === "object" ? l.source.id : l.source;
       var t = typeof l.target === "object" ? l.target.id : l.target;
       if (searchFilter && (!searchFilter[s] || !searchFilter[t])) return "rgba(0,0,0,0)";
-      return isHot(l) ? "rgba(90,86,80,0.85)" : "rgba(140,136,128,0.22)";
+      // Idle links are nearly invisible (about 1/8 of the hot tone, like the
+      // reference site); only the hovered/selected node's links light up.
+      return isHot(l) ? "rgba(90,86,80,0.85)" : "rgba(140,136,128,0.05)";
     })
-    .linkWidth(function (l) { return isHot(l) ? 1.2 : 0; })
-    .linkCurvature(0)
+    .linkWidth(function (l) { return isHot(l) ? 1.2 : 0.5; })
+    .linkCurvature(0.2)
     .linkOpacity(0.5)
     .linkDirectionalParticles(function (l) {
       var s = typeof l.source === "object" ? l.source.id : l.source;
@@ -628,8 +661,26 @@ const html = `<!doctype html>
     .linkDirectionalParticleSpeed(0.0035)
     .linkDirectionalParticleWidth(2.4)
     .onNodeClick(function (n) { select(TERMS[n.id], true, true); })
+    .onNodeHover(function (n) {
+      if (n && isHidden(n)) n = null; // don't light up search-filtered nodes
+      if (n === hoverNode) return;
+      hoverNode = n || null;
+      hoverNb = hoverNode ? computeNeighbors(hoverNode.id) : {};
+      refreshLinksSoon();
+    })
     .onEngineStop(function () {
-      if (!fitted) { fitted = true; Graph.zoomToFit(600, 60); }
+      engineSettled = true;
+      // Idle root view: frame the whole graph once the layout settles. Focused
+      // views own the camera via their own fitCluster tween, so never let this
+      // whole-graph framing overwrite them.
+      if (!fitted && !(current && focused)) {
+        fitted = true;
+        Graph.zoomToFit(600, 60);
+      }
+      // Never call refreshLinks() here: re-setting the link accessors restarts
+      // the engine, which fires onEngineStop again - an endless stop-refresh-
+      // restart loop that churns ~4MB/frame forever and grows the heap without
+      // bound. The one-shot boot refresh below covers the same race.
       if (pendingGather && current) {
         pendingGather = false;
         gatherAround(current.index);
@@ -637,13 +688,22 @@ const html = `<!doctype html>
     });
 
   var fitted = false;
+  var engineSettled = false;
   var pendingGather = false;
 
+  // The graph emphasises one node at a time: the hovered node wins, otherwise
+  // the focused (clicked / deep-linked) one; null means everything is idle.
+  function activeState() {
+    if (hoverNode) return { id: hoverNode.id, nb: hoverNb };
+    if (current && focused) return { id: current.index, nb: neighbors };
+    return null;
+  }
   function isHot(l) {
-    if (!current) return false;
+    var act = activeState();
+    if (!act) return false;
     var s = typeof l.source === "object" ? l.source.id : l.source;
     var t = typeof l.target === "object" ? l.target.id : l.target;
-    return s === current.index || t === current.index;
+    return s === act.id || t === act.id;
   }
 
   function computeNeighbors(i) {
@@ -664,12 +724,20 @@ const html = `<!doctype html>
   function stopAutoRotate() {
     if (!autoRotating) return;
     autoRotating = false;
-    try { Graph.controls().autoRotate = false; } catch (e) {}
   }
-  try {
-    Graph.controls().autoRotate = true;
-    Graph.controls().autoRotateSpeed = 0.5;
-  } catch (e) {}
+  // The vendored renderer only calls controls.update() during interaction or
+  // camera tweens, so OrbitControls.autoRotate never advances on its own.
+  // Drive the idle orbit ourselves: nudge the controls and apply one update
+  // per frame until the first user gesture takes over.
+  (function spin() {
+    if (autoRotating) {
+      try {
+        var c = Graph.controls();
+        if (c) { c.rotateLeft(0.0012); c.update(); }
+      } catch (e) {}
+    }
+    requestAnimationFrame(spin);
+  })();
   ["pointerdown", "wheel"].forEach(function (ev) {
     document.getElementById("graph").addEventListener(ev, stopAutoRotate, { once: true, passive: true });
   });
@@ -677,7 +745,7 @@ const html = `<!doctype html>
   var tweenId = null;
   function fitCluster(selIdx) {
     var selN = nodes[selIdx];
-    var R = 190;
+    var R = 150; // tighter framing so the focused cluster and its labels read large
     var cam = Graph.cameraPosition();
     var dx = cam.x - selN.x, dy = cam.y - selN.y, dz = cam.z - selN.z;
     var d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
@@ -699,7 +767,7 @@ const html = `<!doctype html>
       if (i === selIdx) return [sx, sy, sz];
       var dx = n.x - sx, dy = n.y - sy, dz = n.z - sz;
       var d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
-      var r = (neighbors[i] ? 60 : 150) + (Math.random() - 0.5) * 24;
+      var r = (neighbors[i] ? 75 : 130) + (Math.random() - 0.5) * 20;
       return [sx + (dx / d) * r, sy + (dy / d) * r, sz + (dz / d) * r];
     });
     // Disable d3 forces so nodes stay where the tween puts them, then reheat
@@ -794,12 +862,13 @@ const html = `<!doctype html>
   }
 
   /* ---------- selection ---------- */
-  function select(t, push, gather) {
+  function select(t, push, gather, focus) {
     current = t;
+    focused = focus !== false;
     collapsed = true;
     neighbors = computeNeighbors(t.index);
     renderPanel(t);
-    refreshLinks();
+    refreshLinksNow();
     if (push) history.replaceState(null, "", "?term=" + t.slug);
     document.getElementById("panel").scrollTop = 0;
     if (gather) {
@@ -830,7 +899,7 @@ const html = `<!doctype html>
     if (!q) {
       searchFilter = null;
       countEl.style.display = "none";
-      refreshLinks();
+      refreshLinksSoon();
       return;
     }
     var matches = nameMatches(q);
@@ -839,7 +908,7 @@ const html = `<!doctype html>
     searchFilter = vis;
     countEl.textContent = matches.length + (matches.length === 1 ? " term" : " terms");
     countEl.style.display = "block";
-    refreshLinks();
+    refreshLinksSoon();
   }
   input.addEventListener("input", function () { updateFilter(input.value); });
   clearBtn.addEventListener("click", function () {
@@ -878,15 +947,31 @@ const html = `<!doctype html>
   });
 
   var initial = fromUrl();
-  if (initial) select(initial, true, true);
-  else select(TERMS[0], true, false); // spread view + auto-rotate, like the original site
-  setTimeout(function () { Graph.zoomToFit(500, 60); }, 1600);
-  // onEngineStop is a single-shot callback and may fire before nodes are
-  // laid out; poll as a fallback so a deep-linked entry reliably gathers.
+  if (initial) {
+    // Focus the deep-linked entry immediately, but defer the gather until the
+    // library has finished booting: calling the d3/gather APIs this early
+    // races with its own initialisation and can silently do nothing.
+    select(initial, true, false);
+    pendingGather = true;
+  } else {
+    // No deep link: show the first entry in the panel but keep the graph idle
+    // (no radiating links, no labels, slow auto-rotation) like the reference
+    // root view, and leave the URL clean.
+    select(TERMS[0], false, false, false);
+  }
+  setTimeout(function () { Graph.zoomToFit(500, 60); refreshLinks(); }, 1600);
+  // onEngineStop is a single-shot callback and may fire before nodes are laid
+  // out; poll as a fallback (with a time-based deadline) so a deep-linked
+  // entry always gathers.
+  var gatherDeadline = Date.now() + 4000;
   setInterval(function () {
-    if (pendingGather && current && nodes[current.index].x !== undefined) {
+    if (!pendingGather || !current) return;
+    // Wait for the engine to settle so the post-gather camera fit is not later
+    // overwritten by onEngineStop's whole-graph framing; the deadline keeps
+    // the gather from being postponed forever.
+    if (engineSettled || Date.now() > gatherDeadline) {
       pendingGather = false;
-      gatherAround(current.index);
+      try { gatherAround(current.index); } catch (e) {}
     }
   }, 600);
   requestAnimationFrame(animateNodes);
