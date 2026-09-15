@@ -273,8 +273,13 @@ const html = `<!doctype html>
     font: 15.5px/1.75 -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
   }
   #app { display: flex; height: 100vh; }
-  #graphWrap { position: relative; flex: 1 1 58%; min-width: 0; background: var(--bg); }
+  #graphWrap {
+    position: relative; flex: 1 1 58%; min-width: 0;
+    background-color: var(--bg);
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+  }
   #graph { width: 100%; height: 100%; }
+  .scene-tooltip { display: none !important; }
   #hint {
     position: absolute; bottom: 16px; left: 20px; color: var(--muted);
     font-size: 12px; user-select: none; pointer-events: none;
@@ -448,45 +453,154 @@ const html = `<!doctype html>
     return !!searchFilter && !searchFilter[n.id];
   }
 
-  function refreshChains() {
-    Graph.nodeColor(Graph.nodeColor());
-    Graph.nodeVal(Graph.nodeVal());
+  function refreshLinks() {
     Graph.linkColor(Graph.linkColor());
     Graph.linkWidth(Graph.linkWidth());
     Graph.linkDirectionalParticles(Graph.linkDirectionalParticles());
-    Graph.nodeThreeObject(Graph.nodeThreeObject());
-    if (typeof Graph.nodeVisibility === "function") {
-      Graph.nodeVisibility(function (n) { return !isHidden(n); });
-    }
   }
 
-  var labelCache = {};
-  function makeLabel(text) {
-    if (typeof THREE === "undefined") return null;
-    if (labelCache[text]) return labelCache[text];
+  var labelTexCache = {};
+  var darkMode =
+    typeof matchMedia === "function" &&
+    matchMedia("(prefers-color-scheme: dark)").matches;
+  // Label tone follows the reference site: ink on light, light grey on dark.
+  var LABEL_COLOR = darkMode ? "rgba(210,205,195,0.95)" : "rgba(26,26,25,0.92)";
+  var LABEL_STROKE = darkMode ? "#141311" : "#f2f2f0";
+  function labelTexture(text) {
+    if (labelTexCache[text]) return labelTexCache[text];
     var canvas = document.createElement("canvas");
     var ctx = canvas.getContext("2d");
-    var font = "600 34px ui-monospace, Consolas, monospace";
+    var font = "700 52px ui-monospace, Consolas, monospace";
     ctx.font = font;
-    var w = Math.ceil(ctx.measureText(text).width) + 24;
-    canvas.width = w; canvas.height = 56;
+    var w = Math.ceil(ctx.measureText(text).width) + 28;
+    canvas.width = w;
+    canvas.height = 84;
     ctx = canvas.getContext("2d");
     ctx.font = font;
-    ctx.fillStyle = "rgba(0,0,0,0)";
-    ctx.fillRect(0, 0, w, 56);
-    ctx.fillStyle = "rgba(105,101,94,0.95)";
     ctx.textBaseline = "middle";
-    ctx.fillText(text, 12, 30);
+    // Paper-coloured outline keeps the ink text legible over the noise
+    // background, like the reference site.
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 7;
+    ctx.strokeStyle = LABEL_STROKE;
+    ctx.strokeText(text, 14, 44);
+    ctx.fillStyle = LABEL_COLOR;
+    ctx.fillText(text, 14, 44);
     var texture = new THREE.CanvasTexture(canvas);
-    texture.minFilter = THREE.LinearFilter;
-    var material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
-    var sprite = new THREE.Sprite(material);
-    sprite.scale.set(w / 14, 56 / 14, 1);
-    labelCache[text] = sprite;
-    return sprite;
+    // Keep the default mipmapped minification filter: the texture is usually
+    // downscaled several times when projected, and LinearFilter alone would
+    // alias the thin strokes into grey smudges.
+    texture.anisotropy = 4;
+    var entry = { texture: texture, w: w, h: 84 };
+    labelTexCache[text] = entry;
+    return entry;
   }
 
-  function baseVal(n) { return 2 + Math.min(n.degree, 9) * 1.1; }
+  // Nodes are drawn as a sphere mesh + label sprite we fully own, so opacity
+  // and size can be eased every frame (search fades, selection growth).
+  var sphereGeo = new THREE.SphereGeometry(1, 24, 24);
+  var COLOR_BASE = new THREE.Color("#55534e");
+  var COLOR_SEL = new THREE.Color("#2f2d29");
+  var R_NODE = 6; // world units per cbrt(value); sized to read clearly on screen
+  function nodeRadius(n) {
+    return Math.cbrt(baseVal(n)) * R_NODE;
+  }
+  function buildNodeObject(n) {
+    var grp = new THREE.Group();
+    // Backside shell slightly larger than the sphere draws the thin outline
+    // ring seen on the reference site (light stroke on light bg, dark on dark).
+    var strokeMat = new THREE.MeshBasicMaterial({
+      color: darkMode ? "#1d1c19" : "#f7f6f3",
+      side: THREE.BackSide,
+      transparent: true,
+      opacity: 0,
+    });
+    var stroke = new THREE.Mesh(sphereGeo, strokeMat);
+    stroke.scale.setScalar(nodeRadius(n) * 1.22);
+    var mat = new THREE.MeshBasicMaterial({
+      color: COLOR_BASE.clone(),
+      transparent: true,
+      opacity: 0,
+    });
+    var mesh = new THREE.Mesh(sphereGeo, mat);
+    mesh.scale.setScalar(nodeRadius(n));
+    var lt = labelTexture(n.name.toUpperCase());
+    var lmat = new THREE.SpriteMaterial({
+      map: lt.texture,
+      transparent: true,
+      depthWrite: false,
+      opacity: 0,
+    });
+    var sprite = new THREE.Sprite(lmat);
+    // Sized so glyphs stay legible on screen (~6 CSS px in the narrow preview
+    // pane, larger full-screen); reference-site labels scale with their node.
+    sprite.scale.set(lt.w / 4, lt.h / 4, 1);
+    sprite.visible = false;
+    grp.add(stroke);
+    grp.add(mesh);
+    grp.add(sprite);
+    n.__obj = grp;
+    n.__stroke = stroke;
+    n.__strokeMat = strokeMat;
+    n.__mesh = mesh;
+    n.__mat = mat;
+    n.__sprite = sprite;
+    n.__a = 0.9; // start visible so nodes never begin invisible
+    n.__s = baseVal(n);
+    // Sync materials right away: opacity:0 defaults would leave the node
+    // invisible until the first animateNodes pass reaches it.
+    mat.opacity = n.__a;
+    strokeMat.opacity = n.__a * 0.9;
+    lmat.opacity = n.__a;
+    return grp;
+  }
+
+  // Ease every node towards its target opacity/scale each frame: search
+  // filtering fades nodes in/out instead of popping them.
+  function animateNodes() {
+    nodes.forEach(function (n) {
+      // The graph library builds node objects during its own first render,
+      // which can happen after this loop's first frame - guard against it so
+      // the loop never dies before every node has its meshes.
+      if (!n.__mesh) return;
+      var hidden = isHidden(n);
+      var isSel = !!(current && n.id === current.index);
+      var isNb = !!(current && neighbors[n.id]);
+      var isMatch = !!(searchFilter && searchFilter[n.id]);
+      var aTarget = hidden
+        ? 0
+        : isSel
+          ? 1
+          : searchFilter
+            ? (isMatch ? 1 : 0)
+            : isNb
+              ? 0.95
+              : current
+                ? 0.3
+                : 0.95;
+      var sTarget = hidden ? 0.0001 : baseVal(n) * (isSel ? 2 : 1);
+      n.__a += (aTarget - n.__a) * 0.13;
+      if (aTarget === 0 && n.__a < 0.008) n.__a = 0;
+      if (aTarget === 1 && n.__a > 0.992) n.__a = 1;
+      n.__s += (sTarget - n.__s) * 0.13;
+      var r = Math.cbrt(Math.max(n.__s, 1e-6)) * R_NODE;
+      n.__mesh.scale.setScalar(r);
+      n.__mat.opacity = n.__a;
+      n.__mat.color.lerp(isSel ? COLOR_SEL : COLOR_BASE, 0.15);
+      n.__stroke.scale.setScalar(r * 1.22);
+      n.__strokeMat.opacity = n.__a * 0.9;
+      var showLabel =
+        !hidden && n.__a > 0.5 && (isSel || (searchFilter ? isMatch : isNb));
+      n.__sprite.visible = showLabel;
+      n.__sprite.material.opacity = n.__a;
+      n.__sprite.position.y = r + 8; // label sits right above the node
+    });
+    requestAnimationFrame(animateNodes);
+  }
+
+  function baseVal(n) {
+    return 2 + Math.min(n.degree, 9) * 1.1;
+  }
 
   var Graph = ForceGraph3D()(document.getElementById("graph"))
     .width(wrap.clientWidth)
@@ -494,33 +608,8 @@ const html = `<!doctype html>
     .graphData({ nodes: nodes, links: links })
     .backgroundColor("rgba(0,0,0,0)")
     .showNavInfo(false)
-    .nodeRelSize(3.2)
-    .nodeColor(function (n) {
-      if (isHidden(n)) return "rgba(0,0,0,0)";
-      if (current && n.id === current.index) return "#2f2d29";
-      if (current && neighbors[n.id]) return "rgba(74,72,68,0.92)";
-      if (searchFilter && searchFilter[n.id]) return "rgba(58,56,51,0.9)";
-      return "rgba(74,72,68,0.22)";
-    })
-    .nodeVal(function (n) {
-      if (isHidden(n)) return 0.001;
-      var v = baseVal(n);
-      return current && n.id === current.index ? v * 2 : v;
-    })
-    .nodeLabel(function (n) { return isHidden(n) ? null : n.name; })
-    .nodeThreeObjectExtend(true)
-    .nodeThreeObject(function (n) {
-      if (isHidden(n)) return null;
-      var on = current && (n.id === current.index || neighbors[n.id]);
-      if (searchFilter) on = !!searchFilter[n.id];
-      if (!on) return null;
-      var sprite = makeLabel(n.name.toUpperCase());
-      if (!sprite) return null;
-      var s = sprite.clone();
-      var r = current && n.id === current.index ? baseVal(n) * 1.6 : baseVal(n);
-      s.position.set(0, r * 3.2 + 6, 0);
-      return s;
-    })
+    .nodeLabel(function () { return ""; })
+    .nodeThreeObject(function (n) { return n.__obj || buildNodeObject(n); })
     .linkColor(function (l) {
       var s = typeof l.source === "object" ? l.source.id : l.source;
       var t = typeof l.target === "object" ? l.target.id : l.target;
@@ -536,7 +625,7 @@ const html = `<!doctype html>
       if (searchFilter && (!searchFilter[s] || !searchFilter[t])) return 0;
       return isHot(l) ? 4 : 0;
     })
-    .linkDirectionalParticleSpeed(0.008)
+    .linkDirectionalParticleSpeed(0.0035)
     .linkDirectionalParticleWidth(2.4)
     .onNodeClick(function (n) { select(TERMS[n.id], true, true); })
     .onEngineStop(function () {
@@ -710,7 +799,7 @@ const html = `<!doctype html>
     collapsed = true;
     neighbors = computeNeighbors(t.index);
     renderPanel(t);
-    refreshChains();
+    refreshLinks();
     if (push) history.replaceState(null, "", "?term=" + t.slug);
     document.getElementById("panel").scrollTop = 0;
     if (gather) {
@@ -741,7 +830,7 @@ const html = `<!doctype html>
     if (!q) {
       searchFilter = null;
       countEl.style.display = "none";
-      refreshChains();
+      refreshLinks();
       return;
     }
     var matches = nameMatches(q);
@@ -750,7 +839,7 @@ const html = `<!doctype html>
     searchFilter = vis;
     countEl.textContent = matches.length + (matches.length === 1 ? " term" : " terms");
     countEl.style.display = "block";
-    refreshChains();
+    refreshLinks();
   }
   input.addEventListener("input", function () { updateFilter(input.value); });
   clearBtn.addEventListener("click", function () {
@@ -792,6 +881,15 @@ const html = `<!doctype html>
   if (initial) select(initial, true, true);
   else select(TERMS[0], true, false); // spread view + auto-rotate, like the original site
   setTimeout(function () { Graph.zoomToFit(500, 60); }, 1600);
+  // onEngineStop is a single-shot callback and may fire before nodes are
+  // laid out; poll as a fallback so a deep-linked entry reliably gathers.
+  setInterval(function () {
+    if (pendingGather && current && nodes[current.index].x !== undefined) {
+      pendingGather = false;
+      gatherAround(current.index);
+    }
+  }, 600);
+  requestAnimationFrame(animateNodes);
 })();
 </script>
 </body>
