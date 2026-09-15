@@ -1,7 +1,8 @@
 #!/usr/bin/env -S npx tsx
 // Generate a self-contained static site (3D force graph + detail panel) from
 // internal/Curriculum.md + dictionary/*.md. Output: site/index.html.
-// three.js + 3d-force-graph are vendored in internal/vendor/ and copied to site/vendor/.
+// The graph libraries are bundled by `npm run vendor` into a single IIFE
+// script (internal/vendor/graph.iife.min.js) and copied to site/vendor/.
 
 import {
   readFileSync,
@@ -21,7 +22,7 @@ const CURRICULUM = join(HERE, "Curriculum.md");
 const DICT_DIR = join(ROOT, "dictionary");
 const OUT_DIR = join(ROOT, "site");
 const VENDOR_SRC = join(HERE, "vendor");
-const VENDOR_FILES = ["three.min.js", "3d-force-graph.min.js"];
+const VENDOR_FILES = ["graph.iife.min.js"];
 
 const SECTION_RE = /^## Section \d+ — .+$/;
 const BULLET_RE = /^- (.+)$/;
@@ -424,10 +425,13 @@ const html = `<!doctype html>
 </div>
 <div id="toast"></div>
 <script id="data" type="application/json">${dataJson}</script>
-<script src="vendor/three.min.js"></script>
-<script src="vendor/3d-force-graph.min.js"></script>
+<script src="vendor/graph.iife.min.js"></script>
 <script type="module">
 (function () {
+  // Single-instance bundle (see internal/vendor/entry.mjs): one copy of
+  // three.js shared by the app and the graph library.
+  var ForceGraph3D = window.AICD.ForceGraph3D;
+  var THREE = window.AICD.THREE;
   var DATA = JSON.parse(document.getElementById("data").textContent);
   var TERMS = DATA.terms;
   var GRAPH = DATA.graph;
@@ -587,9 +591,12 @@ const html = `<!doctype html>
 
   // Ease every node towards its target opacity/scale each frame: search
   // filtering fades nodes in/out instead of popping them, and hover/selection
-  // emphasis is smooth as well.
+  // emphasis is smooth as well. The loop exits when the page goes to sleep
+  // (see the idle-sleep section) and reports whether anything is still moving.
   function animateNodes() {
+    if (paused) { loopsRunning = false; return; }
     var act = activeState();
+    var moving = false;
     nodes.forEach(function (n) {
       // The graph library builds node objects during its own first render,
       // which can happen after this loop's first frame - guard against it so
@@ -607,10 +614,13 @@ const html = `<!doctype html>
             ? (isSel ? 1 : isNb ? 0.95 : 0.3)
             : 0.95;
       var sTarget = hidden ? 0.0001 : baseVal(n) * (isSel ? 2 : 1);
-      n.__a += (aTarget - n.__a) * 0.13;
+      var da = aTarget - n.__a;
+      var ds = sTarget - n.__s;
+      if (da > 0.002 || da < -0.002 || ds > 0.01 || ds < -0.01) moving = true;
+      n.__a += da * 0.13;
       if (aTarget === 0 && n.__a < 0.008) n.__a = 0;
       if (aTarget >= 1 && n.__a > 0.992) n.__a = 1;
-      n.__s += (sTarget - n.__s) * 0.13;
+      n.__s += ds * 0.13;
       var r = Math.cbrt(Math.max(n.__s, 1e-6)) * R_NODE;
       n.__mesh.scale.setScalar(r);
       n.__mat.opacity = n.__a;
@@ -619,6 +629,7 @@ const html = `<!doctype html>
       n.__strokeMat.opacity = n.__a * 0.9;
       var showLabel =
         !hidden && n.__a > 0.5 && (isSel || isNb || !!(searchFilter && isMatch));
+      if (n.__sprite.visible !== showLabel) moving = true;
       n.__sprite.visible = showLabel;
       n.__sprite.material.opacity = n.__a;
       // Keep the label glued right above the sphere, sized with the node.
@@ -626,6 +637,7 @@ const html = `<!doctype html>
       n.__sprite.scale.set(n.__lt.w * S, n.__lt.h * S, 1);
       n.__sprite.position.y = r * 1.6;
     });
+    animating = moving;
     requestAnimationFrame(animateNodes);
   }
 
@@ -633,7 +645,7 @@ const html = `<!doctype html>
     return 2 + Math.min(n.degree, 9) * 1.1;
   }
 
-  var Graph = ForceGraph3D()(document.getElementById("graph"))
+  var Graph = ForceGraph3D({ controlType: "orbit" })(document.getElementById("graph"))
     .width(wrap.clientWidth)
     .height(wrap.clientHeight)
     .graphData({ nodes: nodes, links: links })
@@ -667,6 +679,7 @@ const html = `<!doctype html>
       hoverNode = n || null;
       hoverNb = hoverNode ? computeNeighbors(hoverNode.id) : {};
       refreshLinksSoon();
+      wake();
     })
     .onEngineStop(function () {
       engineSettled = true;
@@ -690,6 +703,95 @@ const html = `<!doctype html>
   var fitted = false;
   var engineSettled = false;
   var pendingGather = false;
+
+  /* ---------- idle sleep: zero frames while nothing is happening ---------- */
+
+  // The library renders every animation frame and our easing loops run
+  // alongside it, so an open page burns CPU/GPU forever even when nothing
+  // moves. Drive an explicit sleep/wake cycle instead: activity (pointer,
+  // hover, selection, search, gather, engine ticks, camera tweens, easing)
+  // keeps the loops alive; once everything converges they pause completely -
+  // like the reference site, whose idle page renders zero frames.
+  var paused = false;
+  var loopsRunning = false;
+  var sleepTimer = null;
+  var animating = true; // eased node properties have not converged yet
+
+  function startLoops() {
+    if (loopsRunning) return;
+    loopsRunning = true;
+    requestAnimationFrame(animateNodes);
+    requestAnimationFrame(spin);
+  }
+  function wake() {
+    if (sleepTimer) { clearTimeout(sleepTimer); sleepTimer = null; }
+    if (paused) {
+      paused = false;
+      try { Graph.resumeAnimation(); } catch (e) {}
+    }
+    startLoops();
+    scheduleSleep();
+  }
+  function scheduleSleep() {
+    if (sleepTimer) clearTimeout(sleepTimer);
+    sleepTimer = setTimeout(trySleep, 1200);
+  }
+  function trySleep() {
+    sleepTimer = null;
+    if (paused) return;
+    // Still busy? Engine ticks move nodes, camera tweens move the camera, and
+    // hover/rotation/opacity easing needs a moment after the last interaction -
+    // check again shortly instead of sleeping mid-animation.
+    if (hoverNode || animating || autoRotating || engineMoving() || cameraIsMoving()) {
+      scheduleSleep();
+      return;
+    }
+    paused = true;
+    try { Graph.pauseAnimation(); } catch (e) {}
+  }
+  // Nodes move while the d3 engine ticks (initial layout, gather reheats, link
+  // refreshes) and stand still once it cools down.
+  function engineMoving() {
+    var moved = false;
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      if (n.__px === undefined) {
+        n.__px = n.x;
+        n.__py = n.y;
+        n.__pz = n.z;
+        continue;
+      }
+      if (
+        Math.abs(n.x - n.__px) > 0.05 ||
+        Math.abs(n.y - n.__py) > 0.05 ||
+        Math.abs(n.z - n.__pz) > 0.05
+      )
+        moved = true;
+      n.__px = n.x;
+      n.__py = n.y;
+      n.__pz = n.z;
+    }
+    return moved;
+  }
+  var camProbe = null;
+  function cameraIsMoving() {
+    var cam = null;
+    try { cam = Graph.camera(); } catch (e) {}
+    if (!cam || !cam.position) return false;
+    var c = cam.position;
+    if (camProbe === null) {
+      camProbe = { x: c.x, y: c.y, z: c.z };
+      return true;
+    }
+    var moved =
+      Math.abs(c.x - camProbe.x) > 0.5 ||
+      Math.abs(c.y - camProbe.y) > 0.5 ||
+      Math.abs(c.z - camProbe.z) > 0.5;
+    camProbe.x = c.x;
+    camProbe.y = c.y;
+    camProbe.z = c.z;
+    return moved;
+  }
 
   // The graph emphasises one node at a time: the hovered node wins, otherwise
   // the focused (clicked / deep-linked) one; null means everything is idle.
@@ -717,6 +819,7 @@ const html = `<!doctype html>
 
   window.addEventListener("resize", function () {
     Graph.width(wrap.clientWidth).height(wrap.clientHeight);
+    wake();
   });
 
   /* ---------- auto-rotate & gather tween ---------- */
@@ -724,22 +827,42 @@ const html = `<!doctype html>
   function stopAutoRotate() {
     if (!autoRotating) return;
     autoRotating = false;
+    try { Graph.controls().autoRotate = false; } catch (e) {}
   }
-  // The vendored renderer only calls controls.update() during interaction or
-  // camera tweens, so OrbitControls.autoRotate never advances on its own.
-  // Drive the idle orbit ourselves: nudge the controls and apply one update
-  // per frame until the first user gesture takes over.
-  (function spin() {
-    if (autoRotating) {
-      try {
-        var c = Graph.controls();
-        if (c) { c.rotateLeft(0.0012); c.update(); }
-      } catch (e) {}
-    }
+  // The graph is built with controlType "orbit": its update() applies the
+  // auto-rotation and rebuilds the control state from the current camera, so
+  // external camera moves survive. The vendored renderer does not tick the
+  // controls on idle frames, so drive them from this loop until the first
+  // user gesture (or the end of the intro) stops the rotation for good.
+  var spinLast = 0;
+  function spin() {
+    if (paused) { loopsRunning = false; return; }
+    try {
+      var c = Graph.controls();
+      if (c && autoRotating && c.update) {
+        c.autoRotate = true;
+        c.autoRotateSpeed = 0.5;
+        var now = performance.now();
+        var dt = spinLast ? Math.min((now - spinLast) / 1000, 0.1) : 1 / 60;
+        spinLast = now;
+        c.update(dt);
+      }
+    } catch (e) {}
     requestAnimationFrame(spin);
-  })();
+  }
   ["pointerdown", "wheel"].forEach(function (ev) {
     document.getElementById("graph").addEventListener(ev, stopAutoRotate, { once: true, passive: true });
+  });
+  // The opening act: drift for a few seconds like the reference site's
+  // settling animation, then stop rotating for good.
+  setTimeout(function () {
+    stopAutoRotate();
+    scheduleSleep();
+  }, 8000);
+  // Any pointer activity on the canvas wakes the frame loop (a paused scene
+  // still receives pointer events, so hover and dragging resume rendering).
+  ["pointermove", "pointerdown", "wheel", "pointerleave"].forEach(function (ev) {
+    document.getElementById("graph").addEventListener(ev, wake, { passive: true });
   });
 
   var tweenId = null;
@@ -759,6 +882,7 @@ const html = `<!doctype html>
   }
   function gatherAround(selIdx) {
     stopAutoRotate();
+    wake();
     var selN = nodes[selIdx];
     if (selN.x === undefined) { pendingGather = true; return; } // engine has not placed nodes yet
     var sx = selN.x, sy = selN.y, sz = selN.z;
@@ -869,6 +993,7 @@ const html = `<!doctype html>
     neighbors = computeNeighbors(t.index);
     renderPanel(t);
     refreshLinksNow();
+    wake();
     if (push) history.replaceState(null, "", "?term=" + t.slug);
     document.getElementById("panel").scrollTop = 0;
     if (gather) {
@@ -894,6 +1019,7 @@ const html = `<!doctype html>
     });
   }
   function updateFilter(q) {
+    wake();
     q = (q || "").trim().toLowerCase();
     clearBtn.style.display = q ? "block" : "none";
     if (!q) {
@@ -974,7 +1100,7 @@ const html = `<!doctype html>
       try { gatherAround(current.index); } catch (e) {}
     }
   }, 600);
-  requestAnimationFrame(animateNodes);
+  wake();
 })();
 </script>
 </body>
@@ -987,7 +1113,7 @@ mkdirSync(vendorOut, { recursive: true });
 for (const f of VENDOR_FILES) {
   const src = join(VENDOR_SRC, f);
   if (!existsSync(src))
-    fail(`Missing vendored file ${src} — see internal/vendor/README`);
+    fail(`Missing vendored file ${src} — run \`npm run vendor\` to build it`);
   copyFileSync(src, join(vendorOut, f));
 }
 writeFileSync(join(OUT_DIR, "index.html"), html);

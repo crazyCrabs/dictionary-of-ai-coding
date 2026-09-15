@@ -5,14 +5,18 @@
   "scripts": {
     "generate": "tsx internal/generate-readme.ts",
     "site": "tsx internal/generate-site.ts",
+    "vendor": "esbuild internal/vendor/entry.mjs --bundle --format=iife --global-name=AICD --minify --outfile=internal/vendor/graph.iife.min.js",
     "prepare": "husky"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "3d-force-graph": "^1.79.0",
+    "esbuild": "^0.28.2",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
     "marked": "^18.0.13",
     "prettier": "^3.8.3",
+    "three": "^0.180.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }
