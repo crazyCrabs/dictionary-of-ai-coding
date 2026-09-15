@@ -257,170 +257,481 @@ const html = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AI 编程词典</title>
 <style>
+  /* Palette & motion tokens mirror the reference site (aicodingdictionary.com):
+     paper/ink neutral colours, Helvetica-first sans, mono only for kickers,
+     and a single reveal curve reused by the panel, canvas shift and search. */
   :root {
-    --bg: #edecea; --panel-bg: #faf9f7; --fg: #1a1a18; --muted: #8a867f;
-    --border: #dcd9d3; --accent: #b3541e; --chip-border: #c9c5bd; --bubble-dark: #26241f;
+    --paper: #f2f2f0;
+    --paper-panel: #f2f2f0;
+    --ink: #1a1a19;
+    --ink-panel: #171717;
+    --surface: #e2e2e0;
+    --surface-2: #d9d9d7;
+    --line: rgba(26, 26, 25, 0.14);
+    --line-strong: rgba(26, 26, 25, 0.28);
+    --muted: rgba(26, 26, 25, 0.6);
+    --muted-soft: rgba(26, 26, 25, 0.42);
+    --sans: "Helvetica Neue", Helvetica, Arial, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --reveal-ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --panel-w: 33.3333vw;
+    --panel-shift: 16.6666vw;
+    color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #141311; --panel-bg: #1c1b18; --fg: #e8e5e0; --muted: #96918a;
-      --border: #2c2a26; --accent: #e08a4e; --chip-border: #3a3833; --bubble-dark: #e8e5e0;
+      --paper: #131311;
+      --paper-panel: #1b1a17;
+      --ink: #eceae4;
+      --ink-panel: #f2f0ea;
+      --surface: #1e1d1a;
+      --surface-2: #26241f;
+      --line: rgba(236, 234, 228, 0.14);
+      --line-strong: rgba(236, 234, 228, 0.28);
+      --muted: rgba(236, 234, 228, 0.62);
+      --muted-soft: rgba(236, 234, 228, 0.42);
+      color-scheme: dark;
     }
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
   body {
-    margin: 0; background: var(--bg); color: var(--fg); overflow: hidden;
-    font: 15.5px/1.75 -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    margin: 0; background: var(--paper); color: var(--ink); overflow: hidden;
+    font: 15px/1.55 var(--sans); -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
-  #app { display: flex; height: 100vh; }
-  #graphWrap {
-    position: relative; flex: 1 1 58%; min-width: 0;
-    background-color: var(--bg);
-    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+  ::selection { background: var(--ink); color: var(--paper); }
+
+  /* Canvas occupies the whole viewport; when the panel opens the canvas slides
+     left by half the panel width so the focused node stays visible (matches
+     the reference site's data-shift behaviour). */
+  #canvasWrap {
+    position: fixed; inset: 0; z-index: 0;
+    transition: transform 0.62s var(--reveal-ease);
+    will-change: transform;
   }
+  #canvasWrap[data-shift="true"] { transform: translateX(calc(var(--panel-shift) * -1)); }
   #graph { width: 100%; height: 100%; }
+  #graph canvas { display: block; }
   .scene-tooltip { display: none !important; }
-  #hint {
-    position: absolute; bottom: 16px; left: 20px; color: var(--muted);
-    font-size: 12px; user-select: none; pointer-events: none;
-  }
+
+  /* The reference site ships a vignette layer in CSS but keeps it effectively
+     invisible on the light theme - the paper background reads as a flat,
+     even tone. We drop the gradient entirely so the canvas sits on clean paper. */
+  #vignette { display: none; }
+
+  /* Circular icon buttons (info, sound, etc.) share the same geometry and
+     shift right when the panel opens so they never sit on top of it. */
   .fab {
-    position: absolute; z-index: 5; width: 44px; height: 44px; border-radius: 50%;
-    border: 1px solid var(--border); background: var(--panel-bg); color: var(--fg);
-    font-size: 17px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+    position: fixed; z-index: 50; width: 2.4rem; height: 2.4rem; border-radius: 50%;
+    border: 1px solid var(--line-strong); background: transparent; color: var(--muted);
+    cursor: pointer; display: grid; place-items: center; padding: 0;
+    transition: color 0.2s, border-color 0.2s, right 0.62s var(--reveal-ease), background 0.2s;
   }
-  .fab:hover { border-color: var(--muted); }
-  #infoBtn { top: 20px; right: 20px; font-style: italic; font-family: Georgia, serif; }
+  .fab:hover { color: var(--ink); border-color: rgba(26, 26, 25, 0.6); }
+  @media (prefers-color-scheme: dark) { .fab:hover { border-color: rgba(236, 234, 228, 0.6); } }
+  .fab[data-shift="true"] { right: calc(var(--panel-w) + 32px) !important; }
+  #infoBtn { top: 28px; right: 32px; font: 600 15px/1 var(--mono); }
+
+  /* Search lives as a 2.4rem pill that expands into a full search field on
+     focus/typing, then collapses back when cleared and blurred. */
   #searchBar {
-    position: absolute; top: 20px; left: 20px; z-index: 5;
-    display: flex; align-items: center; gap: 10px;
-    background: var(--panel-bg); border: 1px solid var(--border);
-    border-radius: 999px; padding: 9px 18px; width: 400px; max-width: calc(100% - 120px);
+    position: fixed; top: 28px; left: 32px; z-index: 50;
+    display: flex; align-items: center;
+    width: 2.4rem; height: 2.4rem; padding: 0;
+    border: 1px solid var(--line-strong); border-radius: 999px;
+    background: transparent; overflow: hidden;
+    transition: width 0.46s var(--reveal-ease), padding 0.46s var(--reveal-ease),
+                background 0.25s, border-color 0.25s, box-shadow 0.3s, color 0.2s;
+    color: var(--muted);
   }
-  #searchBar .icon { color: var(--muted); font-size: 15px; }
-  #searchInput { flex: 1; border: none; outline: none; background: transparent; color: var(--fg); font: inherit; min-width: 0; }
-  #clearBtn { border: none; background: none; cursor: pointer; color: var(--muted); font-size: 18px; line-height: 1; padding: 0; display: none; }
-  #clearBtn:hover { color: var(--fg); }
+  #searchBar:hover { color: var(--ink); border-color: rgba(26, 26, 25, 0.5); }
+  #searchBar[data-active="true"] {
+    width: min(360px, calc(100vw - 120px)); padding: 0 12px 0 0;
+    color: var(--ink); border-color: rgba(26, 26, 25, 0.55);
+    background: color-mix(in srgb, var(--paper) 92%, transparent);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    box-shadow: 0 6px 24px rgba(7, 5, 6, 0.12);
+  }
+  @media (prefers-color-scheme: dark) {
+    #searchBar:hover, #searchBar[data-active="true"] { border-color: rgba(236, 234, 228, 0.55); }
+    #searchBar[data-active="true"] { background: color-mix(in srgb, var(--paper) 88%, transparent); }
+  }
+  #searchIcon {
+    width: 2.4rem; height: 2.4rem; flex: none; display: grid; place-items: center;
+    background: none; border: none; cursor: pointer; color: inherit; padding: 0;
+  }
+  #searchIcon svg { width: 1.05rem; height: 1.05rem; display: block; }
+  #searchInput {
+    flex: 1; min-width: 0; border: none; outline: none; background: transparent;
+    color: var(--ink); font: 14px/1 var(--sans); letter-spacing: 0.01em;
+    opacity: 0; transition: opacity 0.28s 60ms;
+  }
+  #searchBar[data-active="true"] #searchInput { opacity: 1; }
+  #searchInput::placeholder { color: var(--muted-soft); }
+  #clearBtn {
+    flex: none; border: none; background: none; cursor: pointer;
+    color: inherit; opacity: 0.55; padding: 2px; display: none;
+    width: 1.4rem; height: 1.4rem; place-items: center;
+  }
+  #clearBtn:hover { opacity: 1; }
+  #searchBar[data-active="true"] #clearBtn.has-value { display: grid; }
   #searchCount {
-    position: absolute; top: 78px; left: 32px; color: var(--muted); display: none;
-    font: 600 11px ui-monospace, Consolas, monospace; letter-spacing: 0.18em; text-transform: uppercase;
+    position: fixed; top: 84px; left: 44px; z-index: 50;
+    color: var(--muted); font: 700 10px/1 var(--mono);
+    letter-spacing: 0.2em; text-transform: uppercase;
+    opacity: 0; transition: opacity 0.25s; pointer-events: none;
+  }
+  #searchCount[data-show="true"] { opacity: 1; }
+
+  /* Orbit hint sits at the bottom centre; fades out once the user interacts
+     or opens a term, matching the reference's transient hint chip. */
+  #orbitHint {
+    position: fixed; bottom: clamp(1.4rem, 4vh, 2.4rem); left: 50%; z-index: 40;
+    transform: translateX(-50%);
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    padding: 0.5rem 0.95rem; border-radius: 999px;
+    background: color-mix(in srgb, var(--paper) 82%, transparent);
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    border: 1px solid var(--line);
+    color: rgba(26, 26, 25, 0.7);
+    font: 12px/1 var(--sans); white-space: nowrap; pointer-events: none;
+    /* backwards (not both): once the intro animation ends the element returns
+       to the normal cascade so [data-hide] can fade it out. With fill-mode
+       both, the final keyframe's opacity:1 would permanently override it. */
+    animation: hintIn 0.6s var(--reveal-ease) backwards;
+    transition: opacity 0.4s, transform 0.4s;
+  }
+  #orbitHint .dot { width: 0.28rem; height: 0.28rem; border-radius: 50%; background: rgba(26, 26, 25, 0.4); }
+  #orbitHint[data-hide="true"] { opacity: 0; transform: translate(-50%, 6px); }
+  @media (prefers-color-scheme: dark) {
+    #orbitHint { color: rgba(236, 234, 228, 0.72); }
+    #orbitHint .dot { background: rgba(236, 234, 228, 0.4); }
+  }
+  @keyframes hintIn {
+    from { opacity: 0; transform: translate(-50%, 8px); }
+    to { opacity: 1; transform: translate(-50%, 0); }
   }
 
+  /* Panel: slides in from the right, 33.33vw wide, own paper/ink palette.
+     Hidden by default (translate(100%) + opacity 0) so the root view is
+     purely the graph, exactly like the reference. */
   #panel {
-    flex: 0 0 42%; max-width: 560px; min-width: 380px; overflow-y: auto;
-    background: var(--panel-bg); border-left: 1px solid var(--border);
+    position: fixed; top: 0; right: 0; z-index: 5;
+    width: var(--panel-w); height: 100dvh;
+    background: var(--paper-panel); color: var(--ink-panel);
+    border-left: 1px solid var(--line);
     display: flex; flex-direction: column;
+    opacity: 0; pointer-events: none;
+    transform: translateX(100%);
+    transition: transform 0.62s var(--reveal-ease), opacity 0.4s ease;
+    overflow: hidden;
   }
-  #panelInner { padding: 28px 32px 8px; flex: 1; }
+  #panel[data-open="true"] { opacity: 1; pointer-events: auto; transform: translateX(0); }
+  #panelScroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
+  #panelInner { padding: clamp(2rem, 4.5vh, 3rem) clamp(1.8rem, 2.6vw, 2.6rem) 1.4rem; }
+  #closePanel {
+    position: absolute; top: clamp(1.1rem, 2.6vh, 1.6rem); right: clamp(1.2rem, 2vw, 1.8rem);
+    z-index: 6; width: 2.4rem; height: 2.4rem; border-radius: 50%;
+    border: 1px solid var(--line-strong); background: transparent; cursor: pointer;
+    display: grid; place-items: center; padding: 0;
+    transition: border-color 0.2s;
+  }
+  #closePanel:hover { border-color: rgba(26, 26, 25, 0.6); }
+  @media (prefers-color-scheme: dark) { #closePanel:hover { border-color: rgba(236, 234, 228, 0.6); } }
+  #closePanel .mark { position: relative; width: 0.8rem; height: 0.8rem; }
+  #closePanel .mark::before, #closePanel .mark::after {
+    content: ""; position: absolute; top: 50%; left: 0; width: 100%; height: 1px;
+    background: rgba(26, 26, 25, 0.62); transition: background 0.2s;
+  }
+  #closePanel .mark::before { transform: rotate(45deg); }
+  #closePanel .mark::after { transform: rotate(-45deg); }
+  #closePanel:hover .mark::before, #closePanel:hover .mark::after { background: var(--ink-panel); }
+  @media (prefers-color-scheme: dark) {
+    #closePanel .mark::before, #closePanel .mark::after { background: rgba(236, 234, 228, 0.62); }
+    #closePanel:hover .mark::before, #closePanel:hover .mark::after { background: var(--ink-panel); }
+  }
+
   .kicker {
-    font: 600 11px ui-monospace, Consolas, monospace; letter-spacing: 0.18em;
-    text-transform: uppercase; color: var(--muted); margin: 26px 0 10px;
+    font: 700 10px/1 var(--mono); letter-spacing: 0.2em;
+    text-transform: uppercase; color: var(--muted-soft);
+    margin: 1.6rem 0 0.85rem;
   }
-  #termTitle { margin: 6px 0 4px; font-size: 30px; letter-spacing: -0.4px; }
-  #termDesc { color: var(--muted); margin: 0 0 6px; }
+  .kicker:first-child { margin-top: 0; }
+  #termTitle {
+    margin: 0.4rem 0 0; font: 700 clamp(2rem, 3.4vw, 3rem)/0.98 var(--sans);
+    letter-spacing: -0.032em; color: var(--ink-panel); text-wrap: balance;
+    padding-right: 3rem;
+  }
+  #termDesc {
+    margin: 0.9rem 0 0; max-width: 34ch;
+    font: 400 clamp(0.95rem, 1vw, 1.05rem)/1.5 var(--sans);
+    color: rgba(23, 23, 23, 0.86);
+  }
+  @media (prefers-color-scheme: dark) { #termDesc { color: rgba(242, 240, 234, 0.86); } }
+
+  .rule {
+    display: block; width: 100%; height: 1px; background: var(--line);
+    margin: 1.6rem 0 0; transform-origin: 0 50%;
+    animation: ruleGrow 0.7s var(--reveal-ease) both;
+  }
+  @keyframes ruleGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+  .bubbles { display: flex; flex-direction: column; gap: 0.45rem; margin: 0; padding: 0; }
   .bubble {
-    max-width: 88%; padding: 12px 16px; border-radius: 14px; margin: 6px 0;
-    font-size: 15px;
+    max-width: 88%; padding: 0.6rem 0.85rem; font: 14px/1.4 var(--sans);
+    letter-spacing: -0.005em;
   }
-  .bubble.q { background: transparent; border: 1px solid var(--border); }
-  .bubble.a { background: var(--bubble-dark); color: var(--panel-bg); margin-left: auto; }
-  @media (prefers-color-scheme: dark) { .bubble.a { color: #171614; } }
+  .bubble.q {
+    align-self: flex-start; color: rgba(23, 23, 23, 0.9);
+    border: 1px solid var(--line); border-radius: 0.85rem 0.85rem 0.85rem 0.1rem;
+  }
+  .bubble.a {
+    align-self: flex-end; color: var(--paper-panel);
+    background: var(--ink-panel); border-radius: 0.85rem 0.85rem 0.1rem 0.85rem;
+  }
   .bubble p { margin: 0; }
-  .bubble a { color: inherit; text-decoration: underline; cursor: pointer; }
-  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .bubble a { color: inherit; text-decoration: underline; text-underline-offset: 0.18em; cursor: pointer; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0; padding: 0; }
   .chip {
-    border: 1px solid var(--chip-border); background: transparent; color: var(--fg);
-    border-radius: 999px; padding: 5px 14px; font: inherit; font-size: 14px;
-    cursor: pointer;
+    font: 500 13px/1 var(--sans); letter-spacing: -0.01em;
+    color: rgba(23, 23, 23, 0.82);
+    border: 1px solid var(--line-strong); background: transparent;
+    border-radius: 999px; padding: 0.42em 0.9em; cursor: pointer;
+    transition: color 0.2s, border-color 0.2s, background 0.2s;
   }
-  .chip:hover { border-color: var(--fg); }
-  .def p { margin: 0.85em 0; }
-  .def a { color: var(--accent); text-decoration: none; cursor: pointer; }
-  .def a:hover { text-decoration: underline; }
+  .chip:hover { color: var(--ink-panel); border-color: rgba(26, 26, 25, 0.6); }
+  @media (prefers-color-scheme: dark) {
+    .chip { color: rgba(242, 240, 234, 0.82); }
+    .chip:hover { color: var(--ink-panel); border-color: rgba(236, 234, 228, 0.6); }
+  }
+
+  .def { font: 15px/1.65 var(--sans); color: rgba(23, 23, 23, 0.86); }
+  @media (prefers-color-scheme: dark) { .def { color: rgba(242, 240, 234, 0.86); } }
+  .def p { margin: 0.75em 0; }
+  .def p:first-child { margin-top: 0; }
+  .def a {
+    color: inherit; text-decoration: underline; text-underline-offset: 0.18em;
+    text-decoration-thickness: 1px; text-decoration-color: rgba(23, 23, 23, 0.38);
+    cursor: pointer; transition: text-decoration-color 0.2s;
+  }
+  .def a:hover { text-decoration-color: var(--ink-panel); }
+  @media (prefers-color-scheme: dark) {
+    .def a { text-decoration-color: rgba(242, 240, 234, 0.38); }
+    .def a:hover { text-decoration-color: var(--ink-panel); }
+  }
   .def code {
-    background: rgba(128,128,128,0.15); padding: 1px 6px; border-radius: 4px;
-    font-size: 0.88em; font-family: ui-monospace, Consolas, monospace;
+    background: rgba(23, 23, 23, 0.08); padding: 0.05em 0.32em; border-radius: 0.3rem;
+    font: 0.86em/1 var(--mono);
   }
-  .def table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 14px; }
-  .def th, .def td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
-  .def th { background: rgba(128,128,128,0.08); }
+  @media (prefers-color-scheme: dark) { .def code { background: rgba(242, 240, 234, 0.1); } }
+  .def table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 13px; }
+  .def th, .def td { border-bottom: 1px solid var(--line); padding: 0.5rem 0.7rem; text-align: left; vertical-align: top; }
+  .def th {
+    font: 700 10.5px/1 var(--mono); letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--muted); white-space: nowrap;
+  }
   .def li { margin: 0.3em 0; }
   .def .rest[hidden] { display: none; }
+
   #readMore {
-    background: none; border: none; color: var(--muted); cursor: pointer;
-    font: 600 11px ui-monospace, Consolas, monospace; letter-spacing: 0.18em;
-    text-transform: uppercase; padding: 4px 0;
+    background: none; border: none; cursor: pointer; padding: 0;
+    color: rgba(23, 23, 23, 0.55);
+    font: 700 10px/1 var(--mono); letter-spacing: 0.2em; text-transform: uppercase;
+    display: inline-flex; align-items: center; gap: 0.3rem; margin-top: 0.6rem;
+    transition: color 0.2s;
   }
-  #readMore:hover { color: var(--fg); }
-  .actions { display: flex; gap: 10px; margin: 22px 0; flex-wrap: wrap; }
+  #readMore:hover { color: var(--ink-panel); }
+  #readMore .icon { display: inline-block; transition: transform 0.3s var(--reveal-ease); }
+  #readMore[data-open="true"] .icon { transform: rotate(180deg); }
+  @media (prefers-color-scheme: dark) {
+    #readMore { color: rgba(242, 240, 234, 0.55); }
+    #readMore:hover { color: var(--ink-panel); }
+  }
+
+  .actions { display: flex; gap: 0.6rem; margin: 1.4rem 0 0.4rem; flex-wrap: wrap; }
   .btn {
-    border: 1px solid var(--chip-border); background: transparent; color: var(--fg);
-    border-radius: 999px; padding: 9px 18px; font: inherit; font-size: 14px; cursor: pointer;
+    font: 500 13px/1 var(--sans); letter-spacing: -0.01em;
+    border-radius: 999px; padding: 0.55em 1.05em; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 0.45rem;
+    transition: background 0.2s, border-color 0.2s, color 0.2s;
+    border: 1px solid var(--line-strong); background: transparent;
+    color: rgba(23, 23, 23, 0.82);
   }
-  .btn.primary { background: var(--fg); color: var(--panel-bg); border-color: var(--fg); }
-  .btn:hover { border-color: var(--fg); }
+  .btn:hover { color: var(--ink-panel); border-color: rgba(26, 26, 25, 0.6); }
+  .btn.primary { background: var(--ink-panel); color: var(--paper-panel); border-color: var(--ink-panel); }
+  .btn.primary:hover { background: rgba(23, 23, 23, 0.85); border-color: rgba(23, 23, 23, 0.85); }
+  @media (prefers-color-scheme: dark) {
+    .btn { color: rgba(242, 240, 234, 0.82); }
+    .btn:hover { color: var(--ink-panel); border-color: rgba(236, 234, 228, 0.6); }
+    .btn.primary { background: var(--ink-panel); color: var(--paper-panel); border-color: var(--ink-panel); }
+    .btn.primary:hover { background: rgba(242, 240, 234, 0.88); border-color: rgba(242, 240, 234, 0.88); }
+  }
+
   #prevNext {
-    position: sticky; bottom: 0; display: flex; justify-content: space-between;
-    background: var(--panel-bg); border-top: 1px solid var(--border); padding: 10px 32px;
+    flex: none; display: flex; border-top: 1px solid var(--line);
+    background: var(--paper-panel);
   }
   #prevNext button {
-    background: none; border: none; color: var(--muted); cursor: pointer;
-    font: 600 12px ui-monospace, Consolas, monospace; letter-spacing: 0.18em;
-    text-transform: uppercase; padding: 8px 0;
+    flex: 1; background: none; border: none; cursor: pointer;
+    padding: 0.9rem clamp(1.4rem, 2vw, 1.8rem);
+    display: inline-flex; align-items: center; gap: 0.7rem;
+    color: var(--ink-panel); font: 500 13px/1 var(--sans);
+    transition: background 0.2s;
   }
-  #prevNext button:hover { color: var(--fg); }
+  #prevNext button:hover { background: rgba(23, 23, 23, 0.04); }
+  @media (prefers-color-scheme: dark) { #prevNext button:hover { background: rgba(242, 240, 234, 0.05); } }
+  #prevNext button[data-dir="next"] { justify-content: flex-end; border-left: 1px solid var(--line); text-align: right; }
+  #prevNext .arrow {
+    width: 2rem; height: 2rem; border-radius: 50%;
+    border: 1px solid var(--line-strong); color: var(--muted);
+    display: grid; place-items: center; font-size: 14px; flex-shrink: 0;
+    transition: color 0.2s, border-color 0.2s;
+  }
+  #prevNext button:hover .arrow { color: var(--ink-panel); border-color: rgba(26, 26, 25, 0.6); }
+  @media (prefers-color-scheme: dark) { #prevNext button:hover .arrow { border-color: rgba(236, 234, 228, 0.6); } }
+  #prevNext .meta { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; flex: 1; }
+  #prevNext button[data-dir="next"] .meta { align-items: flex-end; }
+  #prevNext .kickerS {
+    font: 700 9px/1 var(--mono); letter-spacing: 0.2em;
+    text-transform: uppercase; color: var(--muted-soft);
+  }
+  #prevNext .name {
+    font: 500 12.5px/1.3 var(--sans); color: rgba(23, 23, 23, 0.78);
+    max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    transition: color 0.2s;
+  }
+  #prevNext button:hover .name { color: var(--ink-panel); }
+  @media (prefers-color-scheme: dark) {
+    #prevNext .name { color: rgba(242, 240, 234, 0.78); }
+    #prevNext button:hover .name { color: var(--ink-panel); }
+  }
+
   #toast {
-    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-    background: var(--fg); color: var(--panel-bg); padding: 8px 18px;
-    border-radius: 999px; font-size: 14px; opacity: 0; transition: opacity 0.25s;
-    pointer-events: none; z-index: 30;
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 60;
+    background: var(--ink); color: var(--paper);
+    padding: 8px 18px; border-radius: 999px; font: 13px/1 var(--sans);
+    opacity: 0; transition: opacity 0.25s; pointer-events: none;
   }
   #toast.show { opacity: 1; }
+
   .overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: none;
-    align-items: flex-start; justify-content: center; padding-top: 12vh; z-index: 10;
+    position: fixed; inset: 0; z-index: 60;
+    background: rgba(17, 17, 17, 0.42);
+    backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+    display: none; align-items: center; justify-content: center;
   }
   .overlay.show { display: flex; }
   .sheet {
-    background: var(--panel-bg); border: 1px solid var(--border); border-radius: 14px;
-    width: min(560px, 90vw); max-height: 70vh; overflow: auto; padding: 18px;
+    width: min(92vw, 30rem); max-height: 88dvh; overflow-y: auto;
+    background: var(--paper-panel); color: var(--ink-panel);
+    border: 1px solid var(--line); border-radius: 1rem;
+    padding: clamp(1.6rem, 3vw, 2.2rem);
+    box-shadow: 0 30px 80px -40px rgba(0, 0, 0, 0.6);
+    font: 15px/1.55 var(--sans);
   }
-  @media (max-width: 860px) {
-    body { overflow: auto; }
-    #app { flex-direction: column; height: auto; }
-    #graphWrap { flex: none; height: 52vh; }
-    #panel { flex: none; max-width: none; min-width: 0; border-left: none; border-top: 1px solid var(--border); overflow: visible; }
+  .sheet h2 {
+    margin: 0.6rem 0 0; font: 700 clamp(1.4rem, 2.6vw, 1.9rem)/1 var(--sans);
+    letter-spacing: -0.03em;
+  }
+  .sheet .kickerS {
+    font: 700 10px/1 var(--mono); letter-spacing: 0.2em;
+    text-transform: uppercase; color: var(--muted-soft); margin: 0;
+  }
+  .sheet p { margin: 0.9rem 0 0; color: rgba(23, 23, 23, 0.84); }
+  .sheet code { font: 0.86em/1 var(--mono); background: rgba(23, 23, 23, 0.08); padding: 0.05em 0.32em; border-radius: 0.3rem; }
+  @media (prefers-color-scheme: dark) {
+    .sheet p { color: rgba(242, 240, 234, 0.84); }
+    .sheet code { background: rgba(242, 240, 234, 0.1); }
+  }
+  .sheet .rule { margin: 1.4rem 0; animation: none; transform: none; }
+  .sheet .btn { margin-top: 0.4rem; }
+
+  /* Mobile: canvas stays full, panel becomes a bottom sheet. The reference
+     sheet covers ~55% of the viewport so the focused node stays visible above
+     it; 68dvh is our compromise that still fits the definition + chips. */
+  @media (max-width: 800px) {
+    :root { --panel-w: 100vw; --panel-shift: 0vw; }
+    #canvasWrap[data-shift="true"] { transform: translateY(-34dvh); }
+    #panel {
+      top: auto; bottom: 0; left: 0; right: 0;
+      width: 100vw; height: 68dvh;
+      border-left: none; border-top: 1px solid var(--line);
+      border-radius: 1.25rem 1.25rem 0 0;
+      transform: translateY(100%);
+      box-shadow: 0 -20px 44px -30px rgba(0, 0, 0, 0.55);
+    }
+    #panel[data-open="true"] { transform: translateY(0); }
+    .fab[data-shift="true"] { right: 14px !important; }
+    #infoBtn { top: 14px; right: 14px; }
+    #searchBar { top: 14px; left: 14px; }
+    #searchBar[data-active="true"] { width: calc(100vw - 84px); }
+    #searchCount { top: 68px; left: 26px; }
+    #orbitHint { font-size: 11px; }
+    #panelInner { padding: 3.6rem 1.4rem 1rem; }
+    #termTitle { font-size: clamp(1.8rem, 8vw, 2.4rem); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 </style>
 </head>
 <body>
-<div id="app">
-  <div id="graphWrap">
-    <div id="graph"></div>
-    <div id="searchBar">
-      <span class="icon">&#x1F50D;</span>
-      <input id="searchInput" type="text" placeholder="Search…" autocomplete="off">
-      <button id="clearBtn" title="清除">&#x2715;</button>
-    </div>
-    <div id="searchCount"></div>
-    <button id="infoBtn" class="fab" title="关于">i</button>
-    <div id="hint">拖动旋转 · 滚轮缩放 · 悬停查看关联 · 点击聚焦 · 搜索时无关节点自动隐藏</div>
-  </div>
-  <div id="panel">
+<div id="canvasWrap">
+  <div id="graph"></div>
+</div>
+<div id="vignette"></div>
+<div id="searchBar">
+  <button id="searchIcon" type="button" aria-label="搜索">
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="9" cy="9" r="5.5"/><path d="m13.2 13.2 3.6 3.6"/></svg>
+  </button>
+  <input id="searchInput" type="text" placeholder="搜索词条…" autocomplete="off" spellcheck="false">
+  <button id="clearBtn" type="button" aria-label="清除">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="m4 4 8 8M12 4l-8 8"/></svg>
+  </button>
+</div>
+<div id="searchCount"></div>
+<button id="infoBtn" class="fab" type="button" title="关于" aria-label="关于">i</button>
+<div id="orbitHint">
+  <span class="dot"></span>
+  <span>拖动旋转 · 滚轮缩放 · 点击节点查看详情</span>
+</div>
+<div id="panel" data-open="false" aria-hidden="true">
+  <button id="closePanel" type="button" aria-label="关闭"><span class="mark"></span></button>
+  <div id="panelScroll">
     <div id="panelInner"></div>
-    <div id="prevNext">
-      <button id="prevBtn">&#x2190; Prev</button>
-      <button id="nextBtn">Next &#x2192;</button>
-    </div>
+  </div>
+  <div id="prevNext">
+    <button id="prevBtn" type="button" data-dir="prev">
+      <span class="arrow">←</span>
+      <span class="meta">
+        <span class="kickerS">Prev</span>
+        <span class="name" id="prevName"></span>
+      </span>
+    </button>
+    <button id="nextBtn" type="button" data-dir="next">
+      <span class="meta">
+        <span class="kickerS">Next</span>
+        <span class="name" id="nextName"></span>
+      </span>
+      <span class="arrow">→</span>
+    </button>
   </div>
 </div>
 <div id="infoOverlay" class="overlay">
   <div class="sheet">
-    <h2 style="margin-top:0;">AI 编程词典</h2>
-    <p>把 AI 编程的词汇翻译成大白话。中文版译自 Matt Pocock 的 AI Coding Dictionary(aihero.dev),词条结构与概念归原作者。</p>
-    <p style="color:var(--muted);font-size:13.5px;">3D 图中的节点颜色代表所属章节,连线表示词条间的交叉引用,粒子的流动方向即引用方向;点的大小表示被引用的多少。左键拖动旋转视角,滚轮缩放,拖动节点可重新排布;点击节点后其余节点会向它聚拢。数据与 README、词条文件同源,由 <code>npm run site</code> 生成。</p>
-    <button class="btn" onclick="document.getElementById('infoOverlay').classList.remove('show')">关闭</button>
+    <p class="kickerS">About</p>
+    <h2>AI 编程词典</h2>
+    <p>把 AI 编程的词汇翻译成大白话。中文版译自 Matt Pocock 的 <em>AI Coding Dictionary</em>（aihero.dev），词条结构与概念归原作者。</p>
+    <span class="rule"></span>
+    <p style="font-size:14px;">3D 图中的节点代表词条，连线表示交叉引用，点的大小反映被引用的频次。拖动旋转视角，滚轮缩放，点击节点即可在右侧面板查看详情。数据与 README、词条文件同源，由 <code>npm run site</code> 生成。</p>
+    <button class="btn" type="button" onclick="document.getElementById('infoOverlay').classList.remove('show')">关闭</button>
   </div>
 </div>
 <div id="toast"></div>
@@ -447,10 +758,9 @@ const html = `<!doctype html>
   var hoverNb = {};
   var searchFilter = null; // map of visible node ids while searching
 
-  /* ---------- grey palette (reference-site aesthetic) ---------- */
-
   /* ---------- 3D graph ---------- */
-  var wrap = document.getElementById("graphWrap");
+  // Full-viewport canvas; the wrap translates left when the panel opens.
+  var canvasWrap = document.getElementById("canvasWrap");
   var nodes = GRAPH.nodes.map(function (n) {
     return { id: n.id, name: n.name, degree: n.degree, section: TERMS[n.id].section };
   });
@@ -461,29 +771,25 @@ const html = `<!doctype html>
   }
 
   function refreshLinks() {
-    // Re-set the accessors so the library recomputes every link's look. Guard
-    // with try/catch: during boot the library internals may not exist yet and
-    // an early call can throw; the one-shot boot refresh retries later.
-    // Only call this on state changes (select / hover / search) - see the
-    // onEngineStop comment for why an engine-driven refresh loop is forbidden.
+    // Re-set the accessors so the library recomputes every link's look. Only
+    // call this on state changes (select / hover / search); see the pitfall
+    // memo for why an engine-driven refresh loop is forbidden.
     try {
       Graph.linkColor(Graph.linkColor());
       Graph.linkWidth(Graph.linkWidth());
       Graph.linkDirectionalParticles(Graph.linkDirectionalParticles());
     } catch (e) {}
   }
-  // Every refresh re-sets the link accessors: the library rebuilds the links
-  // and restarts its engine (a multi-second churn of ~4MB/frame that lingers
-  // until a major GC). Hover and search fire far faster than that, so debounce
-  // them: a pointer sweep across many nodes collapses into one refresh once
-  // the target settles instead of one per node.
+  // Debounce hover / search refreshes: each refresh rebuilds the library's
+  // link geometry, so a pointer sweep across many nodes collapses into one
+  // refresh once the target settles instead of one per node.
   var refreshTimer = null;
   function refreshLinksSoon() {
     if (refreshTimer) clearTimeout(refreshTimer);
     refreshTimer = setTimeout(function () {
       refreshTimer = null;
       refreshLinks();
-    }, 200);
+    }, 180);
   }
   function refreshLinksNow() {
     if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = null; }
@@ -494,64 +800,61 @@ const html = `<!doctype html>
   var darkMode =
     typeof matchMedia === "function" &&
     matchMedia("(prefers-color-scheme: dark)").matches;
-  // Label tone follows the reference site: ink on light, light grey on dark.
-  var LABEL_COLOR = darkMode ? "rgba(210,205,195,0.95)" : "rgba(26,26,25,0.92)";
-  var LABEL_STROKE = darkMode ? "#141311" : "#f2f2f0";
+  // Labels use the mono stack in uppercase, matching the reference site's
+  // node captions; the paper-coloured halo keeps them legible over links.
+  var LABEL_COLOR = darkMode ? "rgba(226,224,218,0.92)" : "rgba(40,40,38,0.88)";
+  var LABEL_STROKE = darkMode ? "#131311" : "#f2f2f0";
   function labelTexture(text) {
     if (labelTexCache[text]) return labelTexCache[text];
     var canvas = document.createElement("canvas");
     var ctx = canvas.getContext("2d");
-    var font = "700 52px ui-monospace, Consolas, monospace";
+    // Single-quoted so the inner double quotes survive the TS template
+    // string that emits this into the inline <script> verbatim.
+    var font = '600 34px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
     ctx.font = font;
-    var w = Math.ceil(ctx.measureText(text).width) + 28;
+    var w = Math.ceil(ctx.measureText(text).width) + 20;
     canvas.width = w;
-    canvas.height = 84;
+    canvas.height = 52;
     ctx = canvas.getContext("2d");
     ctx.font = font;
     ctx.textBaseline = "middle";
-    // Paper-coloured outline keeps the ink text legible over the noise
-    // background, like the reference site.
     ctx.lineJoin = "round";
-    ctx.lineWidth = 7;
+    ctx.lineWidth = 5;
     ctx.strokeStyle = LABEL_STROKE;
-    ctx.strokeText(text, 14, 44);
+    ctx.strokeText(text, 10, 28);
     ctx.fillStyle = LABEL_COLOR;
-    ctx.fillText(text, 14, 44);
+    ctx.fillText(text, 10, 28);
     var texture = new THREE.CanvasTexture(canvas);
-    // Keep the default mipmapped minification filter: the texture is usually
-    // downscaled several times when projected, and LinearFilter alone would
-    // alias the thin strokes into grey smudges.
     texture.anisotropy = 4;
-    var entry = { texture: texture, w: w, h: 84 };
+    var entry = { texture: texture, w: w, h: 52 };
     labelTexCache[text] = entry;
     return entry;
   }
 
-  // Nodes are drawn as a sphere mesh + label sprite we fully own, so opacity
-  // and size can be eased every frame (search fades, selection growth).
-  var sphereGeo = new THREE.SphereGeometry(1, 24, 24);
-  var COLOR_BASE = new THREE.Color("#55534e");
-  var COLOR_SEL = new THREE.Color("#2f2d29");
-  var R_NODE = 6; // world units per cbrt(value); sized to read clearly on screen
+  // Nodes are a single sphere mesh + optional label sprite. The earlier build
+  // added a backside "stroke shell" to fake an outline ring, which doubled the
+  // geometry count and shaded every node twice per frame - dropped for perf.
+  // The paper-coloured background + vignette gives enough contrast on its own.
+  var sphereGeo = new THREE.SphereGeometry(1, 20, 20);
+  var COLOR_BASE = new THREE.Color(darkMode ? "#8f8c85" : "#5c5a55");
+  var COLOR_SEL = new THREE.Color(darkMode ? "#eceae4" : "#1a1a19");
+  var R_NODE = 1.8; // world units per sqrt(value)
+  // sqrt (not cbrt) spreads the size range ~4.7x between degree-0 and degree-9
+  // nodes. The absolute scale is tuned so the largest hub spans ~7-8% of the
+  // viewport height at the root framing, matching the reference site where
+  // hubs read clearly larger but never dominate the frame.
+  function baseVal(n) {
+    return 0.5 + Math.min(n.degree, 9) * 1.2;
+  }
   function nodeRadius(n) {
-    return Math.cbrt(baseVal(n)) * R_NODE;
+    return Math.sqrt(baseVal(n)) * R_NODE;
   }
   function buildNodeObject(n) {
     var grp = new THREE.Group();
-    // Backside shell slightly larger than the sphere draws the thin outline
-    // ring seen on the reference site (light stroke on light bg, dark on dark).
-    var strokeMat = new THREE.MeshBasicMaterial({
-      color: darkMode ? "#1d1c19" : "#f7f6f3",
-      side: THREE.BackSide,
-      transparent: true,
-      opacity: 0,
-    });
-    var stroke = new THREE.Mesh(sphereGeo, strokeMat);
-    stroke.scale.setScalar(nodeRadius(n) * 1.22);
     var mat = new THREE.MeshBasicMaterial({
       color: COLOR_BASE.clone(),
       transparent: true,
-      opacity: 0,
+      opacity: 0.9,
     });
     var mesh = new THREE.Mesh(sphereGeo, mat);
     mesh.scale.setScalar(nodeRadius(n));
@@ -563,45 +866,36 @@ const html = `<!doctype html>
       opacity: 0,
     });
     var sprite = new THREE.Sprite(lmat);
-    // Label size scales with the node (glyph height ~1/3 of the sphere
-    // diameter): dense spread views stay uncluttered while focused views stay
-    // legible, matching how the reference site sizes labels with their node.
-    var S0 = nodeRadius(n) / 80;
+    // Caption height eases gently with node size (near-uniform, like the
+    // reference): ~2 world units on leaves up to ~3.3 on the biggest hub.
+    var h0 = 2.0 + nodeRadius(n) * 0.28;
+    var S0 = h0 / 52; // 52 = label texture height in px
     sprite.scale.set(lt.w * S0, lt.h * S0, 1);
     sprite.visible = false;
-    grp.add(stroke);
     grp.add(mesh);
     grp.add(sprite);
     n.__obj = grp;
-    n.__stroke = stroke;
-    n.__strokeMat = strokeMat;
     n.__mesh = mesh;
     n.__mat = mat;
     n.__sprite = sprite;
     n.__lt = lt;
-    n.__a = 0.9; // start visible so nodes never begin invisible
+    n.__a = 0.9;
     n.__s = baseVal(n);
-    // Sync materials right away: opacity:0 defaults would leave the node
-    // invisible until the first animateNodes pass reaches it.
-    mat.opacity = n.__a;
-    strokeMat.opacity = n.__a * 0.9;
-    lmat.opacity = n.__a;
     return grp;
   }
 
-  // Ease every node towards its target opacity/scale each frame: search
-  // filtering fades nodes in/out instead of popping them, and hover/selection
-  // emphasis is smooth as well. The loop exits when the page goes to sleep
-  // (see the idle-sleep section) and reports whether anything is still moving.
+  // Ease every node towards its target opacity/scale. The loop reports whether
+  // anything is still moving so the sleep timer can retire the frame loop
+  // once the scene settles (idle = zero frames rendered, like the reference).
   function animateNodes() {
     if (paused) { loopsRunning = false; return; }
     var act = activeState();
     var moving = false;
-    nodes.forEach(function (n) {
-      // The graph library builds node objects during its own first render,
-      // which can happen after this loop's first frame - guard against it so
-      // the loop never dies before every node has its meshes.
-      if (!n.__mesh) return;
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      // The library builds node objects lazily on its own first render, which
+      // can happen after this loop's first frame - guard against undefined.
+      if (!n.__mesh) continue;
       var hidden = isHidden(n);
       var isSel = !!(act && n.id === act.id);
       var isNb = !!(act && act.nb[n.id]);
@@ -612,42 +906,39 @@ const html = `<!doctype html>
           ? (isMatch ? 1 : 0)
           : act
             ? (isSel ? 1 : isNb ? 0.95 : 0.3)
-            : 0.95;
-      var sTarget = hidden ? 0.0001 : baseVal(n) * (isSel ? 2 : 1);
+            : 0.92;
+      var sTarget = hidden ? 0.0001 : baseVal(n) * (isSel ? 1.6 : 1);
       var da = aTarget - n.__a;
       var ds = sTarget - n.__s;
-      if (da > 0.002 || da < -0.002 || ds > 0.01 || ds < -0.01) moving = true;
-      n.__a += da * 0.13;
+      if (da > 0.002 || da < -0.002 || ds > 0.008 || ds < -0.008) moving = true;
+      n.__a += da * 0.16;
       if (aTarget === 0 && n.__a < 0.008) n.__a = 0;
       if (aTarget >= 1 && n.__a > 0.992) n.__a = 1;
-      n.__s += ds * 0.13;
-      var r = Math.cbrt(Math.max(n.__s, 1e-6)) * R_NODE;
+      n.__s += ds * 0.16;
+      var r = Math.sqrt(Math.max(n.__s, 1e-6)) * R_NODE;
       n.__mesh.scale.setScalar(r);
       n.__mat.opacity = n.__a;
-      n.__mat.color.lerp(isSel ? COLOR_SEL : COLOR_BASE, 0.15);
-      n.__stroke.scale.setScalar(r * 1.22);
-      n.__strokeMat.opacity = n.__a * 0.9;
-      var showLabel =
-        !hidden && n.__a > 0.5 && (isSel || isNb || !!(searchFilter && isMatch));
+      n.__mat.color.lerp(isSel ? COLOR_SEL : COLOR_BASE, 0.18);
+      // Every visible node carries its caption, like the reference site;
+      // hidden (search-filtered) nodes drop theirs.
+      var showLabel = !hidden && n.__a > 0.25;
       if (n.__sprite.visible !== showLabel) moving = true;
       n.__sprite.visible = showLabel;
-      n.__sprite.material.opacity = n.__a;
-      // Keep the label glued right above the sphere, sized with the node.
-      var S = r / 80;
-      n.__sprite.scale.set(n.__lt.w * S, n.__lt.h * S, 1);
-      n.__sprite.position.y = r * 1.6;
-    });
+      if (showLabel) {
+        n.__sprite.material.opacity = Math.min(n.__a, 0.95);
+        var h = 2.0 + r * 0.28;
+        var S = h / 52;
+        n.__sprite.scale.set(n.__lt.w * S, n.__lt.h * S, 1);
+        n.__sprite.position.y = r + h * 0.8;
+      }
+    }
     animating = moving;
     requestAnimationFrame(animateNodes);
   }
 
-  function baseVal(n) {
-    return 2 + Math.min(n.degree, 9) * 1.1;
-  }
-
   var Graph = ForceGraph3D({ controlType: "orbit" })(document.getElementById("graph"))
-    .width(wrap.clientWidth)
-    .height(wrap.clientHeight)
+    .width(window.innerWidth)
+    .height(window.innerHeight)
     .graphData({ nodes: nodes, links: links })
     .backgroundColor("rgba(0,0,0,0)")
     .showNavInfo(false)
@@ -657,22 +948,20 @@ const html = `<!doctype html>
       var s = typeof l.source === "object" ? l.source.id : l.source;
       var t = typeof l.target === "object" ? l.target.id : l.target;
       if (searchFilter && (!searchFilter[s] || !searchFilter[t])) return "rgba(0,0,0,0)";
-      // Idle links are nearly invisible (about 1/8 of the hot tone, like the
-      // reference site); only the hovered/selected node's links light up.
-      return isHot(l) ? "rgba(90,86,80,0.85)" : "rgba(140,136,128,0.05)";
+      // Idle links are near-invisible hairlines; hot links pick up the ink
+      // tone so a focused node's edges read clearly (like the reference).
+      return isHot(l)
+        ? (darkMode ? "rgba(232,230,224,0.8)" : "rgba(26,26,25,0.65)")
+        : (darkMode ? "rgba(200,196,190,0.09)" : "rgba(26,26,25,0.09)");
     })
-    .linkWidth(function (l) { return isHot(l) ? 1.2 : 0.5; })
-    .linkCurvature(0.2)
-    .linkOpacity(0.5)
-    .linkDirectionalParticles(function (l) {
-      var s = typeof l.source === "object" ? l.source.id : l.source;
-      var t = typeof l.target === "object" ? l.target.id : l.target;
-      if (searchFilter && (!searchFilter[s] || !searchFilter[t])) return 0;
-      return isHot(l) ? 4 : 0;
-    })
-    .linkDirectionalParticleSpeed(0.0035)
-    .linkDirectionalParticleWidth(2.4)
-    .onNodeClick(function (n) { select(TERMS[n.id], true, true); })
+    .linkWidth(function (l) { return isHot(l) ? 0.8 : 0.25; })
+    .linkOpacity(0.4)
+    // Directional particles only on the focused node's links (a handful), so
+    // the cost stays tiny while the reference's "flow" cue is preserved.
+    .linkDirectionalParticles(function (l) { return isHot(l) ? 3 : 0; })
+    .linkDirectionalParticleSpeed(0.004)
+    .linkDirectionalParticleWidth(0.9)
+    .onNodeClick(function (n) { select(TERMS[n.id], true); })
     .onNodeHover(function (n) {
       if (n && isHidden(n)) n = null; // don't light up search-filtered nodes
       if (n === hoverNode) return;
@@ -683,35 +972,27 @@ const html = `<!doctype html>
     })
     .onEngineStop(function () {
       engineSettled = true;
-      // Idle root view: frame the whole graph once the layout settles. Focused
-      // views own the camera via their own fitCluster tween, so never let this
-      // whole-graph framing overwrite them.
+      // Frame the whole graph once the layout settles. Focused views own the
+      // camera via fitCluster, so never let this whole-graph framing overwrite
+      // them. Never call refreshLinks() here: re-setting accessors restarts the
+      // engine and re-fires onEngineStop - the churn-loop pitfall.
       if (!fitted && !(current && focused)) {
         fitted = true;
-        Graph.zoomToFit(600, 60);
-      }
-      // Never call refreshLinks() here: re-setting the link accessors restarts
-      // the engine, which fires onEngineStop again - an endless stop-refresh-
-      // restart loop that churns ~4MB/frame forever and grows the heap without
-      // bound. The one-shot boot refresh below covers the same race.
-      if (pendingGather && current) {
-        pendingGather = false;
-        gatherAround(current.index);
+        frameRoot();
       }
     });
 
   var fitted = false;
   var engineSettled = false;
-  var pendingGather = false;
 
   /* ---------- idle sleep: zero frames while nothing is happening ---------- */
 
-  // The library renders every animation frame and our easing loops run
+  // The library renders every animation frame and our easing loop runs
   // alongside it, so an open page burns CPU/GPU forever even when nothing
   // moves. Drive an explicit sleep/wake cycle instead: activity (pointer,
-  // hover, selection, search, gather, engine ticks, camera tweens, easing)
-  // keeps the loops alive; once everything converges they pause completely -
-  // like the reference site, whose idle page renders zero frames.
+  // hover, selection, search, engine ticks, camera tweens, easing) keeps the
+  // loop alive; once everything converges it pauses completely - like the
+  // reference site, whose idle page renders zero frames.
   var paused = false;
   var loopsRunning = false;
   var sleepTimer = null;
@@ -721,7 +1002,6 @@ const html = `<!doctype html>
     if (loopsRunning) return;
     loopsRunning = true;
     requestAnimationFrame(animateNodes);
-    requestAnimationFrame(spin);
   }
   function wake() {
     if (sleepTimer) { clearTimeout(sleepTimer); sleepTimer = null; }
@@ -734,23 +1014,25 @@ const html = `<!doctype html>
   }
   function scheduleSleep() {
     if (sleepTimer) clearTimeout(sleepTimer);
-    sleepTimer = setTimeout(trySleep, 1200);
+    // 500ms is short enough that a settled scene stops burning frames quickly,
+    // but long enough that hover / pointer-move bursts don't thrash wake-sleep.
+    sleepTimer = setTimeout(trySleep, 500);
   }
   function trySleep() {
     sleepTimer = null;
     if (paused) return;
     // Still busy? Engine ticks move nodes, camera tweens move the camera, and
-    // hover/rotation/opacity easing needs a moment after the last interaction -
-    // check again shortly instead of sleeping mid-animation.
-    if (hoverNode || animating || autoRotating || engineMoving() || cameraIsMoving()) {
+    // hover/opacity easing needs a moment after the last interaction - check
+    // again shortly instead of sleeping mid-animation.
+    if (hoverNode || animating || engineMoving() || cameraIsMoving()) {
       scheduleSleep();
       return;
     }
     paused = true;
     try { Graph.pauseAnimation(); } catch (e) {}
   }
-  // Nodes move while the d3 engine ticks (initial layout, gather reheats, link
-  // refreshes) and stand still once it cools down.
+  // Nodes move while the d3 engine ticks (initial layout, link refreshes) and
+  // stand still once it cools down.
   function engineMoving() {
     var moved = false;
     for (var i = 0; i < nodes.length; i++) {
@@ -818,57 +1100,70 @@ const html = `<!doctype html>
   }
 
   window.addEventListener("resize", function () {
-    Graph.width(wrap.clientWidth).height(wrap.clientHeight);
+    Graph.width(window.innerWidth).height(window.innerHeight);
     wake();
   });
 
-  /* ---------- auto-rotate & gather tween ---------- */
-  var autoRotating = true;
-  function stopAutoRotate() {
-    if (!autoRotating) return;
-    autoRotating = false;
-    try { Graph.controls().autoRotate = false; } catch (e) {}
-  }
-  // The graph is built with controlType "orbit": its update() applies the
-  // auto-rotation and rebuilds the control state from the current camera, so
-  // external camera moves survive. The vendored renderer does not tick the
-  // controls on idle frames, so drive them from this loop until the first
-  // user gesture (or the end of the intro) stops the rotation for good.
-  var spinLast = 0;
-  function spin() {
-    if (paused) { loopsRunning = false; return; }
-    try {
-      var c = Graph.controls();
-      if (c && autoRotating && c.update) {
-        c.autoRotate = true;
-        c.autoRotateSpeed = 0.5;
-        var now = performance.now();
-        var dt = spinLast ? Math.min((now - spinLast) / 1000, 0.1) : 1 / 60;
-        spinLast = now;
-        c.update(dt);
-      }
-    } catch (e) {}
-    requestAnimationFrame(spin);
-  }
-  ["pointerdown", "wheel"].forEach(function (ev) {
-    document.getElementById("graph").addEventListener(ev, stopAutoRotate, { once: true, passive: true });
-  });
-  // The opening act: drift for a few seconds like the reference site's
-  // settling animation, then stop rotating for good.
-  setTimeout(function () {
-    stopAutoRotate();
-    scheduleSleep();
-  }, 8000);
   // Any pointer activity on the canvas wakes the frame loop (a paused scene
   // still receives pointer events, so hover and dragging resume rendering).
+  // The first gesture also hides the orbit hint chip.
+  var orbitHint = document.getElementById("orbitHint");
+  function hideHint() {
+    if (orbitHint && orbitHint.dataset.hide !== "true") {
+      orbitHint.dataset.hide = "true";
+    }
+  }
   ["pointermove", "pointerdown", "wheel", "pointerleave"].forEach(function (ev) {
     document.getElementById("graph").addEventListener(ev, wake, { passive: true });
   });
+  ["pointerdown", "wheel"].forEach(function (ev) {
+    document.getElementById("graph").addEventListener(ev, hideHint, { once: true, passive: true });
+  });
 
-  var tweenId = null;
+  /* ---------- camera focus (no auto-rotate, no gather tween) ---------- */
+  // The reference site holds a static camera at rest and only eases it toward
+  // the selected node; nodes never move on their own. That means no spin
+  // loop, no gather tween, no d3 reheat - just a single camera tween per
+  // selection, which keeps the frame budget tiny.
+
+  // Root framing: pull the camera in to a close-up of the node cloud so it
+  // fills the viewport with outer hubs cropping at the edges, exactly like
+  // the reference's root view. We compute the cloud's bounding sphere and
+  // place the camera at ~66% of the exact-fit distance. Doing it via
+  // cameraPosition (rather than zoomToFit + a zoom multiplier) avoids relying
+  // on the library's async zoom getter, which returned a stale pre-fit value
+  // and left the cloud a small centred clump.
+  function frameRoot() {
+    var cx = 0, cy = 0, cz = 0, i, n;
+    for (i = 0; i < nodes.length; i++) {
+      n = nodes[i];
+      cx += n.x || 0; cy += n.y || 0; cz += n.z || 0;
+    }
+    cx /= nodes.length; cy /= nodes.length; cz /= nodes.length;
+    var R = 1;
+    for (i = 0; i < nodes.length; i++) {
+      n = nodes[i];
+      var ddx = (n.x || 0) - cx, ddy = (n.y || 0) - cy, ddz = (n.z || 0) - cz;
+      var dd = Math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz);
+      if (dd > R) R = dd;
+    }
+    var fov = (Graph.camera().fov || 40) * Math.PI / 180;
+    var fitDist = (R / Math.tan(fov / 2)) * 1.05;
+    var dist = fitDist * 0.9; // node cloud fills the frame, hubs kiss the edges
+    var cam = Graph.cameraPosition();
+    var vx = cam.x - cx, vy = cam.y - cy, vz = cam.z - cz;
+    var vd = Math.sqrt(vx * vx + vy * vy + vz * vz) || 1;
+    Graph.cameraPosition(
+      { x: cx + (vx / vd) * dist, y: cy + (vy / vd) * dist, z: cz + (vz / vd) * dist },
+      { x: cx, y: cy, z: cz },
+      1100
+    );
+  }
+
   function fitCluster(selIdx) {
     var selN = nodes[selIdx];
-    var R = 150; // tighter framing so the focused cluster and its labels read large
+    if (selN.x === undefined) return; // engine has not placed nodes yet
+    var R = 100; // framing radius: selected node + its neighbours read clearly
     var cam = Graph.cameraPosition();
     var dx = cam.x - selN.x, dy = cam.y - selN.y, dz = cam.z - selN.z;
     var d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
@@ -877,49 +1172,45 @@ const html = `<!doctype html>
     Graph.cameraPosition(
       { x: selN.x + (dx / d) * dist, y: selN.y + (dy / d) * dist, z: selN.z + (dz / d) * dist },
       { x: selN.x, y: selN.y, z: selN.z },
-      600
+      700
     );
   }
-  function gatherAround(selIdx) {
-    stopAutoRotate();
-    wake();
-    var selN = nodes[selIdx];
-    if (selN.x === undefined) { pendingGather = true; return; } // engine has not placed nodes yet
-    var sx = selN.x, sy = selN.y, sz = selN.z;
-    var starts = nodes.map(function (n) { return [n.x, n.y, n.z]; });
-    var targets = nodes.map(function (n, i) {
-      if (i === selIdx) return [sx, sy, sz];
-      var dx = n.x - sx, dy = n.y - sy, dz = n.z - sz;
-      var d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
-      var r = (neighbors[i] ? 75 : 130) + (Math.random() - 0.5) * 20;
-      return [sx + (dx / d) * r, sy + (dy / d) * r, sz + (dz / d) * r];
-    });
-    // Disable d3 forces so nodes stay where the tween puts them, then reheat
-    // the engine: while ticks run, node.x changes sync to the render meshes
-    // (vendor 1.73.x has no engineStop; without reheat the sync pipeline is
-    // dead once alpha converges and the gather would be invisible).
-    try {
-      Graph.d3Force("charge", null);
-      Graph.d3Force("link", null);
-      Graph.d3Force("center", null);
-      Graph.d3ReheatSimulation();
-    } catch (e) {}
-    if (tweenId) cancelAnimationFrame(tweenId);
-    var t0 = performance.now(), D = 900;
-    (function step() {
-      var k = Math.min(1, (performance.now() - t0) / D);
-      var e = 1 - Math.pow(1 - k, 3); // easeOutCubic
-      nodes.forEach(function (n, i) {
-        n.x = starts[i][0] + (targets[i][0] - starts[i][0]) * e;
-        n.y = starts[i][1] + (targets[i][1] - starts[i][1]) * e;
-        n.z = starts[i][2] + (targets[i][2] - starts[i][2]) * e;
-      });
-      if (k < 1) { tweenId = requestAnimationFrame(step); }
-      else { tweenId = null; fitCluster(selIdx); }
-    })();
-  }
 
-  /* ---------- panel ---------- */
+  /* ---------- panel (slides in from the right, canvas shifts to make room) ---------- */
+  var panelEl = document.getElementById("panel");
+  var panelScroll = document.getElementById("panelScroll");
+  var infoBtn = document.getElementById("infoBtn");
+  var prevNameEl = document.getElementById("prevName");
+  var nextNameEl = document.getElementById("nextName");
+  var panelOpen = false;
+
+  function setPanelOpen(open) {
+    if (panelOpen === open) return;
+    panelOpen = open;
+    panelEl.dataset.open = open ? "true" : "false";
+    panelEl.setAttribute("aria-hidden", open ? "false" : "true");
+    // Reference behaviour: canvas slides left by half the panel width, and
+    // the top-right icon buttons follow so they never sit on top of the panel.
+    canvasWrap.dataset.shift = open ? "true" : "false";
+    infoBtn.dataset.shift = open ? "true" : "false";
+    if (open) hideHint();
+    // Give the browser a frame to apply the new canvas size before the
+    // renderer recomputes; the CSS transition runs on the compositor so the
+    // canvas keeps drawing smoothly while the wrap translates.
+    wake();
+  }
+  function closePanel() {
+    if (!panelOpen) return;
+    setPanelOpen(false);
+    // Drop focus so idle links fade back to hairlines.
+    focused = false;
+    refreshLinksSoon();
+    wake();
+    // Clean the URL so a reload returns to the root view.
+    if (location.search || location.hash) history.replaceState(null, "", location.pathname);
+  }
+  document.getElementById("closePanel").addEventListener("click", closePanel);
+
   function esc(s) {
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
   }
@@ -927,7 +1218,7 @@ const html = `<!doctype html>
     var sortedLinks = t.links.slice().sort(function (a, b) { return a.localeCompare(b); });
     var chips = sortedLinks.map(function (name) {
       var target = TERMS.find(function (x) { return x.name === name; });
-      return '<button class="chip" data-slug="' + target.slug + '">' + esc(name) + "</button>";
+      return '<button class="chip" type="button" data-slug="' + target.slug + '">' + esc(name) + "</button>";
     }).join("");
     var usageHtml = t.usage.map(function (u, i) {
       return '<div class="bubble ' + (i % 2 ? "a" : "q") + '">' + u + "</div>";
@@ -936,17 +1227,23 @@ const html = `<!doctype html>
       '<div class="kicker">' + esc(DATA.sections[t.section]) + "</div>" +
       '<h1 id="termTitle">' + esc(t.name) + "</h1>" +
       '<p id="termDesc">' + esc(t.description) + "</p>" +
-      (usageHtml ? '<div class="kicker">Usage</div><div id="usageBubbles">' + usageHtml + "</div>" : "") +
+      '<span class="rule"></span>' +
+      (usageHtml ? '<div class="kicker">Usage</div><div class="bubbles" id="usageBubbles">' + usageHtml + "</div>" : "") +
       (chips ? '<div class="kicker">Connects to</div><div class="chips">' + chips + "</div>" : "") +
       '<div class="kicker">Full definition</div>' +
       '<div class="def"><div>' + t.firstPara + "</div>" +
       '<div class="rest" id="defRest" hidden>' + t.restHtml + "</div></div>" +
-      '<button id="readMore">Read more &#x2304;</button>' +
+      '<button id="readMore" type="button" data-open="false">Read more <span class="icon">⌄</span></button>' +
       '<div class="actions">' +
-      '<button class="btn primary" id="copyMdBtn">Copy Markdown</button>' +
-      '<button class="btn" id="shareBtn">Share</button>' +
+      '<button class="btn primary" type="button" id="copyMdBtn">Copy Markdown</button>' +
+      '<button class="btn" type="button" id="shareBtn">Share</button>' +
       "</div>";
     bindPanel(t);
+    // Prev / Next labels preview the neighbouring terms.
+    var p = TERMS[(t.index - 1 + TERMS.length) % TERMS.length];
+    var nx = TERMS[(t.index + 1) % TERMS.length];
+    if (prevNameEl) prevNameEl.textContent = p.name;
+    if (nextNameEl) nextNameEl.textContent = nx.name;
   }
 
   function bindPanel(t) {
@@ -954,7 +1251,8 @@ const html = `<!doctype html>
     rm.addEventListener("click", function () {
       collapsed = !collapsed;
       document.getElementById("defRest").hidden = collapsed;
-      rm.innerHTML = collapsed ? "Read more &#x2304;" : "Read less &#x2303;";
+      rm.dataset.open = collapsed ? "false" : "true";
+      rm.firstChild.nodeValue = collapsed ? "Read more " : "Read less ";
     });
     document.getElementById("copyMdBtn").addEventListener("click", function () {
       navigator.clipboard.writeText(t.bodyMd).then(function () { toast("Markdown 已复制"); });
@@ -965,7 +1263,7 @@ const html = `<!doctype html>
       navigator.clipboard.writeText(url).then(function () { toast("链接已复制"); });
     });
     panelInner.querySelectorAll(".chip").forEach(function (chip) {
-      chip.addEventListener("click", function () { select(bySlug[chip.dataset.slug], true, true); });
+      chip.addEventListener("click", function () { select(bySlug[chip.dataset.slug], true); });
     });
     panelInner.querySelectorAll("#panelInner .def a, #usageBubbles a").forEach(function (a) {
       var m = (a.getAttribute("href") || "").match(/^#term=(.+)$/);
@@ -973,7 +1271,7 @@ const html = `<!doctype html>
       var name = decodeURIComponent(m[1]);
       var target = TERMS.find(function (x) { return x.name === name; });
       if (target) {
-        a.addEventListener("click", function (ev) { ev.preventDefault(); select(target, true, true); });
+        a.addEventListener("click", function (ev) { ev.preventDefault(); select(target, true); });
       }
     });
     collapsed = true;
@@ -986,32 +1284,38 @@ const html = `<!doctype html>
   }
 
   /* ---------- selection ---------- */
-  function select(t, push, gather, focus) {
+  function select(t, push, focus) {
     current = t;
     focused = focus !== false;
     collapsed = true;
     neighbors = computeNeighbors(t.index);
     renderPanel(t);
+    setPanelOpen(true);
     refreshLinksNow();
     wake();
     if (push) history.replaceState(null, "", "?term=" + t.slug);
-    document.getElementById("panel").scrollTop = 0;
-    if (gather) {
-      try { gatherAround(t.index); } catch (e) {}
-    }
+    if (panelScroll) panelScroll.scrollTop = 0;
+    // Camera eases toward the selected node; nodes themselves never move.
+    try { fitCluster(t.index); } catch (e) {}
   }
   function step(delta) {
     if (!current) return;
     var i = (current.index + delta + TERMS.length) % TERMS.length;
-    select(TERMS[i], true, true);
+    select(TERMS[i], true);
   }
   document.getElementById("prevBtn").addEventListener("click", function () { step(-1); });
   document.getElementById("nextBtn").addEventListener("click", function () { step(1); });
 
-  /* ---------- search: inline bar filters the graph live ---------- */
+  /* ---------- search: pill expands on focus, filters the graph live ---------- */
+  var searchBar = document.getElementById("searchBar");
+  var searchIcon = document.getElementById("searchIcon");
   var input = document.getElementById("searchInput");
   var clearBtn = document.getElementById("clearBtn");
   var countEl = document.getElementById("searchCount");
+
+  function setSearchActive(active) {
+    searchBar.dataset.active = active ? "true" : "false";
+  }
   function nameMatches(q) {
     q = q.trim().toLowerCase();
     return TERMS.filter(function (t) {
@@ -1021,10 +1325,11 @@ const html = `<!doctype html>
   function updateFilter(q) {
     wake();
     q = (q || "").trim().toLowerCase();
-    clearBtn.style.display = q ? "block" : "none";
+    if (q) clearBtn.classList.add("has-value");
+    else clearBtn.classList.remove("has-value");
     if (!q) {
       searchFilter = null;
-      countEl.style.display = "none";
+      countEl.dataset.show = "false";
       refreshLinksSoon();
       return;
     }
@@ -1032,30 +1337,60 @@ const html = `<!doctype html>
     var vis = {};
     matches.forEach(function (t) { vis[t.index] = 1; });
     searchFilter = vis;
-    countEl.textContent = matches.length + (matches.length === 1 ? " term" : " terms");
-    countEl.style.display = "block";
+    countEl.textContent = matches.length + (matches.length === 1 ? " 个词条" : " 个词条");
+    countEl.dataset.show = "true";
     refreshLinksSoon();
   }
+  searchIcon.addEventListener("click", function () {
+    setSearchActive(true);
+    input.focus();
+  });
+  input.addEventListener("focus", function () { setSearchActive(true); });
+  input.addEventListener("blur", function () {
+    // Collapse back to the icon pill only when empty; otherwise keep it open
+    // so the user can see what they searched for while they inspect the graph.
+    if (!input.value) setSearchActive(false);
+  });
   input.addEventListener("input", function () { updateFilter(input.value); });
   clearBtn.addEventListener("click", function () {
     input.value = ""; updateFilter(""); input.focus();
   });
   input.addEventListener("keydown", function (e) {
-    if (e.key === "Escape") { input.value = ""; updateFilter(""); input.blur(); }
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      input.value = ""; updateFilter(""); input.blur(); setSearchActive(false);
+    }
     if (e.key === "Enter") {
       var first = nameMatches(input.value)[0];
-      if (first) select(first, true, true);
+      if (first) select(first, true);
     }
   });
-  document.getElementById("infoBtn").addEventListener("click", function () {
+
+  /* ---------- info modal ---------- */
+  infoBtn.addEventListener("click", function () {
     document.getElementById("infoOverlay").classList.add("show");
   });
   document.getElementById("infoOverlay").addEventListener("click", function (e) {
     if (e.target.id === "infoOverlay") e.target.classList.remove("show");
   });
+
+  /* ---------- global keys: / focuses search, Esc closes panel/modal ---------- */
   document.addEventListener("keydown", function (e) {
     if (e.key === "/" && document.activeElement !== input) {
-      e.preventDefault(); input.focus(); input.select();
+      e.preventDefault();
+      setSearchActive(true);
+      input.focus();
+      input.select();
+      return;
+    }
+    if (e.key === "Escape") {
+      var overlay = document.getElementById("infoOverlay");
+      if (overlay.classList.contains("show")) {
+        overlay.classList.remove("show");
+        return;
+      }
+      if (document.activeElement === input) return; // input handles its own Esc
+      closePanel();
     }
   });
 
@@ -1069,37 +1404,37 @@ const html = `<!doctype html>
   }
   window.addEventListener("hashchange", function () {
     var t = fromUrl();
-    if (t && t !== current) select(t, false, true);
+    if (t && t !== current) select(t, false);
   });
 
   var initial = fromUrl();
   if (initial) {
-    // Focus the deep-linked entry immediately, but defer the gather until the
-    // library has finished booting: calling the d3/gather APIs this early
-    // races with its own initialisation and can silently do nothing.
-    select(initial, true, false);
-    pendingGather = true;
-  } else {
-    // No deep link: show the first entry in the panel but keep the graph idle
-    // (no radiating links, no labels, slow auto-rotation) like the reference
-    // root view, and leave the URL clean.
-    select(TERMS[0], false, false, false);
+    // Deep link: open the panel and light up the graph for that term straight
+    // away; the camera focus runs once the engine has placed the nodes.
+    select(initial, false);
   }
-  setTimeout(function () { Graph.zoomToFit(500, 60); refreshLinks(); }, 1600);
-  // onEngineStop is a single-shot callback and may fire before nodes are laid
-  // out; poll as a fallback (with a time-based deadline) so a deep-linked
-  // entry always gathers.
-  var gatherDeadline = Date.now() + 4000;
-  setInterval(function () {
-    if (!pendingGather || !current) return;
-    // Wait for the engine to settle so the post-gather camera fit is not later
-    // overwritten by onEngineStop's whole-graph framing; the deadline keeps
-    // the gather from being postponed forever.
-    if (engineSettled || Date.now() > gatherDeadline) {
-      pendingGather = false;
-      try { gatherAround(current.index); } catch (e) {}
+  // else: root view - panel stays closed, no term focused, canvas fills the
+  // screen, orbit hint invites the first gesture (matches reference behaviour).
+
+  setTimeout(function () {
+    if (!fitted) {
+      fitted = true;
+      frameRoot();
     }
-  }, 600);
+    refreshLinks();
+  }, 1500);
+  // Deep-linked entries may need to wait for the engine to place nodes before
+  // the camera can focus; retry once when it settles.
+  var focusDeadline = Date.now() + 4000;
+  var focusPoll = setInterval(function () {
+    if (!current || !focused) { clearInterval(focusPoll); return; }
+    if (nodes[current.index] && nodes[current.index].x !== undefined && engineSettled) {
+      clearInterval(focusPoll);
+      try { fitCluster(current.index); } catch (e) {}
+    } else if (Date.now() > focusDeadline) {
+      clearInterval(focusPoll);
+    }
+  }, 400);
   wake();
 })();
 </script>
