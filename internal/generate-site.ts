@@ -891,6 +891,44 @@ const html = `<!doctype html>
     if (paused) { loopsRunning = false; return; }
     var act = activeState();
     var moving = false;
+    // Ambient spin: ease the camera azimuthally around the cloud centre while
+    // the root view is at rest (see the spin state machine below).
+    // OrbitControls' rotateLeft helper is absent
+    // from the vendored three build, so orbit the position directly; Orbit
+    // Controls re-derives its spherical from the live camera on the next
+    // user interaction, so handing control back stays seamless.
+    if (rotating && spinCenter) {
+      var cam = null;
+      try { cam = Graph.camera(); } catch (e) {}
+      if (cam) {
+        var px = cam.position.x - spinCenter.x;
+        var pz = cam.position.z - spinCenter.z;
+        var ang = SPIN_RATE;
+        var ca = Math.cos(ang);
+        var sa = Math.sin(ang);
+        cam.position.x = spinCenter.x + px * ca + pz * sa;
+        cam.position.z = spinCenter.z - px * sa + pz * ca;
+        cam.lookAt(spinCenter);
+      }
+    }
+    // Gather tween: exponential approach toward each target. Self-correcting
+    // if the d3 engine ticks mid-tween, and free at rest - once converged the
+    // scene sleeps as usual. See the gather section below setGatherTargets.
+    var gathering = false;
+    for (var gid in gatherMap) {
+      var g = gatherMap[gid];
+      var gn = g.n;
+      if (gn.x === undefined) { delete gatherMap[gid]; continue; }
+      var gdx = g.tx - gn.x, gdy = g.ty - gn.y, gdz = g.tz - gn.z;
+      if (Math.abs(gdx) > 0.05 || Math.abs(gdy) > 0.05 || Math.abs(gdz) > 0.05) {
+        gn.x += gdx * 0.07;
+        gn.y += gdy * 0.07;
+        gn.z += gdz * 0.07;
+        gathering = true;
+      } else {
+        gn.x = g.tx; gn.y = g.ty; gn.z = g.tz;
+      }
+    }
     for (var i = 0; i < nodes.length; i++) {
       var n = nodes[i];
       // The library builds node objects lazily on its own first render, which
@@ -932,7 +970,7 @@ const html = `<!doctype html>
         n.__sprite.position.y = r + h * 0.8;
       }
     }
-    animating = moving;
+    animating = moving || gathering;
     requestAnimationFrame(animateNodes);
   }
 
@@ -948,13 +986,14 @@ const html = `<!doctype html>
       var s = typeof l.source === "object" ? l.source.id : l.source;
       var t = typeof l.target === "object" ? l.target.id : l.target;
       if (searchFilter && (!searchFilter[s] || !searchFilter[t])) return "rgba(0,0,0,0)";
-      // Idle links are near-invisible hairlines; hot links pick up the ink
-      // tone so a focused node's edges read clearly (like the reference).
+      // Idle links are fully hidden - the reference reads as "no lines" until
+      // a node is hovered/focused, then only its own edges pick up the ink.
+      // Hiding them also skips drawing 500+ segments in the resting scene.
       return isHot(l)
         ? (darkMode ? "rgba(232,230,224,0.8)" : "rgba(26,26,25,0.65)")
-        : (darkMode ? "rgba(200,196,190,0.09)" : "rgba(26,26,25,0.09)");
+        : "rgba(0,0,0,0)";
     })
-    .linkWidth(function (l) { return isHot(l) ? 0.8 : 0.25; })
+    .linkWidth(function (l) { return isHot(l) ? 0.8 : 0; })
     .linkOpacity(0.4)
     // Directional particles only on the focused node's links (a handful), so
     // the cost stays tiny while the reference's "flow" cue is preserved.
@@ -964,11 +1003,30 @@ const html = `<!doctype html>
     .onNodeClick(function (n) { select(TERMS[n.id], true); })
     .onNodeHover(function (n) {
       if (n && isHidden(n)) n = null; // don't light up search-filtered nodes
+      // Sticky hover: gather slides a neighbour under the stationary pointer,
+      // which would otherwise steal the emphasis and flicker the radiating
+      // lines. A gathered neighbour only wins after the pointer leaves first.
+      if (n && hoverNode && n !== hoverNode && hoverNb[n.id]) return;
       if (n === hoverNode) return;
+      // While a selection owns the emphasis, hover is inert (reference
+      // behaviour): track it for stickiness but skip the link refresh and
+      // gather churn - clicking is what moves the focus.
+      var hadFocus = !!(current && focused);
       hoverNode = n || null;
       hoverNb = hoverNode ? computeNeighbors(hoverNode.id) : {};
-      refreshLinksSoon();
+      if (!hadFocus) {
+        refreshLinksSoon();
+        // Hover is a first-class focus on the root view: lines radiate and
+        // neighbours gather around the hovered node; on hover-out they
+        // release back home (or to the selected term if one is focused).
+        queueGather(120);
+      }
       wake();
+    })
+    .onBackgroundClick(function () {
+      // Like the reference: clicking empty space is what clears a selection
+      // and eases the camera back to the root framing.
+      if (current || focused) clearSelection();
     })
     .onEngineStop(function () {
       engineSettled = true;
@@ -979,6 +1037,13 @@ const html = `<!doctype html>
       if (!fitted && !(current && focused)) {
         fitted = true;
         frameRoot();
+        queueWelcomeSpin();
+      } else if (current && focused && nodes[current.index].x !== undefined) {
+        // Link refreshes reheat the engine and drift node positions after
+        // the camera aimed; re-aim once it re-settles so the selected node
+        // stays centred. Camera tweens never restart the engine, so this
+        // cannot loop.
+        try { fitCluster(current.index); } catch (e) {}
       }
     });
 
@@ -997,6 +1062,30 @@ const html = `<!doctype html>
   var loopsRunning = false;
   var sleepTimer = null;
   var animating = true; // eased node properties have not converged yet
+  var rotating = false;
+  var spinResumeTimer = null;
+  var SPIN_RATE = 0.0018; // rad/frame at 60fps ≈ 58s per revolution
+  function yieldSpin() {
+    rotating = false;
+    if (spinResumeTimer) { clearTimeout(spinResumeTimer); spinResumeTimer = null; }
+  }
+  function maybeResumeSpin() {
+    spinResumeTimer = null;
+    if (current && focused) return; // a selection still owns the camera
+    rotating = true;
+    wake();
+  }
+  function pauseSpinTemporarily() {
+    yieldSpin();
+    spinResumeTimer = setTimeout(maybeResumeSpin, 3000);
+  }
+  // First framing at boot: start the ambient spin unless a deep link opened
+  // straight into a focused view.
+  function queueWelcomeSpin() {
+    setTimeout(function () {
+      if (!(current && focused)) maybeResumeSpin();
+    }, 1400);
+  }
 
   function startLoops() {
     if (loopsRunning) return;
@@ -1024,7 +1113,7 @@ const html = `<!doctype html>
     // Still busy? Engine ticks move nodes, camera tweens move the camera, and
     // hover/opacity easing needs a moment after the last interaction - check
     // again shortly instead of sleeping mid-animation.
-    if (hoverNode || animating || engineMoving() || cameraIsMoving()) {
+    if (hoverNode || animating || rotating || engineMoving() || cameraIsMoving()) {
       scheduleSleep();
       return;
     }
@@ -1075,11 +1164,13 @@ const html = `<!doctype html>
     return moved;
   }
 
-  // The graph emphasises one node at a time: the hovered node wins, otherwise
-  // the focused (clicked / deep-linked) one; null means everything is idle.
+  // The graph emphasises one thing at a time, like the reference: a clicked
+  // / deep-linked term owns the emphasis - hovering other nodes does nothing
+  // while it is focused - and hover only takes over on the unselected root
+  // view. null means everything is idle.
   function activeState() {
-    if (hoverNode) return { id: hoverNode.id, nb: hoverNb };
     if (current && focused) return { id: current.index, nb: neighbors };
+    if (hoverNode) return { id: hoverNode.id, nb: hoverNb };
     return null;
   }
   function isHot(l) {
@@ -1097,6 +1188,64 @@ const html = `<!doctype html>
       if (e[1] === i) set[e[0]] = 1;
     });
     return set;
+  }
+
+  /* ---------- gather: ease a selection's neighbours toward it ---------- */
+  // The reference only re-frames the camera; per the user's request we also
+  // pull connected nodes ~1/3 of the way toward the hovered / selected node
+  // once the layout has cooled, and send them home when the emphasis clears. The
+  // tween runs in the shared rAF loop (see animateNodes) and costs nothing
+  // at rest - once converged the scene sleeps as usual.
+  var gatherMap = {};
+  var GATHER_PULL = 0.32;
+  function setGatherTargets(selIdx) {
+    var next = {};
+    var sel = selIdx != null ? nodes[selIdx] : null;
+    var i, n, id, g;
+    if (sel && sel.x !== undefined && engineSettled) {
+      var nb = computeNeighbors(selIdx);
+      for (i = 0; i < nodes.length; i++) {
+        n = nodes[i];
+        if (!nb[n.id] || n.x === undefined) continue;
+        // Home = natural position, captured the first time this node is
+        // pulled, so releasing always returns it to the same spot.
+        var home = gatherMap[n.id] ? gatherMap[n.id].home : { x: n.x, y: n.y, z: n.z };
+        next[n.id] = {
+          n: n,
+          home: home,
+          tx: sel.x + (n.x - sel.x) * GATHER_PULL,
+          ty: sel.y + (n.y - sel.y) * GATHER_PULL,
+          tz: sel.z + (n.z - sel.z) * GATHER_PULL,
+        };
+      }
+    }
+    // Nodes gathered for a previous selection (or all of them, on clear)
+    // ease back to their captured home positions.
+    for (id in gatherMap) {
+      g = gatherMap[id];
+      if (!next[id]) {
+        next[id] = { n: g.n, home: g.home, tx: g.home.x, ty: g.home.y, tz: g.home.z };
+      }
+    }
+    gatherMap = next;
+    wake();
+  }
+  // The gather target is whatever owns the emphasis right now: the hovered
+  // node wins, then the focused selection, else everything releases home.
+  // Debounce so a pointer sweep across many nodes collapses into one pull,
+  // and give click-triggered pulls a beat behind the camera tween.
+  var gatherDelay = null;
+  function expectedGatherTarget() {
+    if (current && focused) return current.index;
+    if (hoverNode) return hoverNode.id;
+    return null;
+  }
+  function queueGather(delay) {
+    if (gatherDelay) clearTimeout(gatherDelay);
+    gatherDelay = setTimeout(function () {
+      gatherDelay = null;
+      setGatherTargets(expectedGatherTarget());
+    }, delay || 120);
   }
 
   window.addEventListener("resize", function () {
@@ -1118,13 +1267,13 @@ const html = `<!doctype html>
   });
   ["pointerdown", "wheel"].forEach(function (ev) {
     document.getElementById("graph").addEventListener(ev, hideHint, { once: true, passive: true });
+    document.getElementById("graph").addEventListener(ev, pauseSpinTemporarily, { passive: true });
   });
 
-  /* ---------- camera focus (no auto-rotate, no gather tween) ---------- */
-  // The reference site holds a static camera at rest and only eases it toward
-  // the selected node; nodes never move on their own. That means no spin
-  // loop, no gather tween, no d3 reheat - just a single camera tween per
-  // selection, which keeps the frame budget tiny.
+  /* ---------- camera focus ---------- */
+  // A selection eases the camera toward its node (biased so the node lands
+  // mid-screen next to the open panel); clearing a selection eases back to
+  // the root framing. The ambient spin yields to every camera tween here.
 
   // Root framing: pull the camera in to a close-up of the node cloud so it
   // fills the viewport with outer hubs cropping at the edges, exactly like
@@ -1133,6 +1282,7 @@ const html = `<!doctype html>
   // cameraPosition (rather than zoomToFit + a zoom multiplier) avoids relying
   // on the library's async zoom getter, which returned a stale pre-fit value
   // and left the cloud a small centred clump.
+  var spinCenter = null; // welcome-spin orbit centre (cloud centroid)
   function frameRoot() {
     var cx = 0, cy = 0, cz = 0, i, n;
     for (i = 0; i < nodes.length; i++) {
@@ -1147,6 +1297,7 @@ const html = `<!doctype html>
       var dd = Math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz);
       if (dd > R) R = dd;
     }
+    spinCenter = { x: cx, y: cy, z: cz };
     var fov = (Graph.camera().fov || 40) * Math.PI / 180;
     var fitDist = (R / Math.tan(fov / 2)) * 1.05;
     var dist = fitDist * 0.9; // node cloud fills the frame, hubs kiss the edges
@@ -1169,9 +1320,25 @@ const html = `<!doctype html>
     var d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
     var fov = (Graph.camera().fov || 40) * Math.PI / 180;
     var dist = (R / Math.tan(fov / 2)) * 1.05;
+    // Centre the node in the *visible* area: with the panel open the wrap
+    // translates left by half the panel width, so bias the look-at target
+    // right by the same fraction of the frustum width to land the node
+    // mid-screen instead of mid-canvas (mobile shifts vertically instead,
+    // which the default centring already accounts for).
+    var look = { x: selN.x, y: selN.y, z: selN.z };
+    if (panelOpen && window.innerWidth > 800) {
+      var fx = -dx / d, fy = -dy / d, fz = -dz / d; // camera forward
+      var rx = -fz, rz = fx; // forward x up(0,1,0), renormalised below
+      var rl = Math.sqrt(rx * rx + rz * rz) || 1;
+      rx /= rl; rz /= rl;
+      var aspect = window.innerWidth / Math.max(window.innerHeight, 1);
+      var off = 0.3333 * dist * Math.tan(fov / 2) * aspect;
+      look.x = selN.x - rx * off;
+      look.z = selN.z - rz * off;
+    }
     Graph.cameraPosition(
       { x: selN.x + (dx / d) * dist, y: selN.y + (dy / d) * dist, z: selN.z + (dz / d) * dist },
-      { x: selN.x, y: selN.y, z: selN.z },
+      look,
       700
     );
   }
@@ -1199,17 +1366,30 @@ const html = `<!doctype html>
     // canvas keeps drawing smoothly while the wrap translates.
     wake();
   }
-  function closePanel() {
-    if (!panelOpen) return;
+  // Closing the panel only hides it - the selection (radiating links,
+  // gathered neighbours, camera focus) stays, like the reference's Esc
+  // behaviour. Clicking empty canvas is what actually clears the selection.
+  function hidePanelOnly() {
     setPanelOpen(false);
-    // Drop focus so idle links fade back to hairlines.
-    focused = false;
-    refreshLinksSoon();
     wake();
+  }
+  function clearSelection() {
+    current = null;
+    focused = false;
+    hoverNode = null;
+    hoverNb = {};
+    hidePanelOnly();
+    setGatherTargets(null);
+    refreshLinksSoon();
+    // Ease the camera back to the root framing, then let the ambient spin
+    // pick up again once the tween has settled.
+    try { frameRoot(); } catch (e) {}
+    pauseSpinTemporarily();
     // Clean the URL so a reload returns to the root view.
     if (location.search || location.hash) history.replaceState(null, "", location.pathname);
+    wake();
   }
-  document.getElementById("closePanel").addEventListener("click", closePanel);
+  document.getElementById("closePanel").addEventListener("click", hidePanelOnly);
 
   function esc(s) {
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
@@ -1295,8 +1475,13 @@ const html = `<!doctype html>
     wake();
     if (push) history.replaceState(null, "", "?term=" + t.slug);
     if (panelScroll) panelScroll.scrollTop = 0;
-    // Camera eases toward the selected node; nodes themselves never move.
+    // A focused view owns the camera: the ambient spin yields while the
+    // selection is active (Esc keeps it paused; clearing the selection
+    // resumes it).
+    yieldSpin();
+    // Camera eases toward the selected node and its neighbours gather.
     try { fitCluster(t.index); } catch (e) {}
+    queueGather(260);
   }
   function step(delta) {
     if (!current) return;
@@ -1390,7 +1575,7 @@ const html = `<!doctype html>
         return;
       }
       if (document.activeElement === input) return; // input handles its own Esc
-      closePanel();
+      if (panelOpen) hidePanelOnly();
     }
   });
 
@@ -1420,6 +1605,7 @@ const html = `<!doctype html>
     if (!fitted) {
       fitted = true;
       frameRoot();
+      queueWelcomeSpin();
     }
     refreshLinks();
   }, 1500);
@@ -1431,6 +1617,7 @@ const html = `<!doctype html>
     if (nodes[current.index] && nodes[current.index].x !== undefined && engineSettled) {
       clearInterval(focusPoll);
       try { fitCluster(current.index); } catch (e) {}
+      queueGather(260);
     } else if (Date.now() > focusDeadline) {
       clearInterval(focusPoll);
     }
