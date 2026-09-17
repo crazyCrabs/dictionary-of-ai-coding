@@ -770,6 +770,51 @@ const html = `<!doctype html>
     return !!searchFilter && !searchFilter[n.id];
   }
 
+  var innerGraph = null; // the inner three-forcegraph kapsule, found in the scene
+  function getInnerGraph() {
+    if (innerGraph) return innerGraph;
+    // The outer 3d-force-graph kapsule only re-exports a fixed method list
+    // (zoomToFit / pauseAnimation / camera / ...) - resetCountdown lives on
+    // the inner instance, reachable only through the scene graph.
+    try {
+      var scan = function (obj, depth) {
+        if (!obj || depth > 1) return null;
+        for (var i = 0; i < obj.children.length; i++) {
+          var c = obj.children[i];
+          if (c && typeof c.resetCountdown === "function") return c;
+          var f = scan(c, depth + 1);
+          if (f) return f;
+        }
+        return null;
+      };
+      innerGraph = scan(Graph.scene(), 0);
+    } catch (e) {}
+    return innerGraph;
+  }
+  var innerWarned = false;
+  function restartEngineForGather() {
+    var inner = getInnerGraph();
+    if (!inner) {
+      // Silent no-op here would look exactly like the old desync bug - make
+      // the failure observable once.
+      if (!innerWarned) {
+        innerWarned = true;
+        console.warn("AICD: inner graph not found - line sync will lag during gathers");
+      }
+      return;
+    }
+    // A previous convergence latch may have left cooldownTicks at 1 while
+    // the engine was already stopped (onEngineStop never fired to restore
+    // Infinity) - then the next restart would die after a single frame,
+    // which read as an occasional gather desync.
+    // Kill any residual drag reheat: a click that jiggled 1px leaves
+    // d3AlphaTarget at .3 when dragend never fires, and ticks at that alpha
+    // re-relax the whole layout over the full cooldown window, carrying the
+    // just-centred node away from its pose (read as "click did not centre").
+    try { Graph.d3AlphaTarget(0); } catch (e) {}
+    try { Graph.cooldownTicks(Infinity); } catch (e) {}
+    try { inner.resetCountdown(); } catch (e) {}
+  }
   function refreshLinks() {
     // Re-set the accessors so the library recomputes every link's look. Only
     // call this on state changes (select / hover / search); see the pitfall
@@ -779,6 +824,10 @@ const html = `<!doctype html>
       Graph.linkWidth(Graph.linkWidth());
       Graph.linkDirectionalParticles(Graph.linkDirectionalParticles());
     } catch (e) {}
+    // The accessor digest pauses the engine (update() clears engineRunning);
+    // while a gather tween is out the engine must keep ticking so lines
+    // re-anchor every frame (see setGatherTargets).
+    if (gatherActive) restartEngineForGather();
   }
   // Debounce hover / search refreshes: each refresh rebuilds the library's
   // link geometry, so a pointer sweep across many nodes collapses into one
@@ -891,6 +940,54 @@ const html = `<!doctype html>
     if (paused) { loopsRunning = false; return; }
     var act = activeState();
     var moving = false;
+    // Camera tween frame: glide the position and sweep the look-at point
+    // towards the target. When trackNode is set the look-at follows its LIVE
+    // position, so engine drift cannot shake the framing.
+    if (camTween) {
+      var ct = camTween;
+      var cp = Math.min((performance.now() - ct.t0) / ct.dur, 1);
+      // ease-in-out cubic: softer departure and landing than pure ease-out
+      var ce = cp < 0.5 ? 4 * cp * cp * cp : 1 - Math.pow(-2 * cp + 2, 3) / 2;
+      var tcam = null;
+      try { tcam = Graph.camera(); } catch (e) {}
+      if (tcam && ct.node && ct.node.x === undefined) {
+        camTween = null; // anchor node vanished - bail out
+      } else if (tcam) {
+        var lt = ct.node || ct.pivot;
+        // Orbit the pivot's vertical axis: the offset direction swings by
+        // rot while the radius eases to the framing distance, so the rest
+        // of the graph visibly turns the target to the screen centre.
+        var rr = ct.r0 + (ct.r1 - ct.r0) * ce;
+        var ux = ct.u0.x, uy = ct.u0.y, uz = ct.u0.z;
+        if (ct.rot) {
+          var aa = ct.rot * ce;
+          var ca = Math.cos(aa), sa = Math.sin(aa);
+          ux = ct.u0.x * ca + ct.u0.z * sa;
+          uz = -ct.u0.x * sa + ct.u0.z * ca;
+        }
+        tcam.position.set(lt.x + ux * rr, lt.y + uy * rr, lt.z + uz * rr);
+        camLook.x = ct.l0.x + (lt.x + ct.lb.x - ct.l0.x) * ce;
+        camLook.y = ct.l0.y + (lt.y + ct.lb.y - ct.l0.y) * ce;
+        camLook.z = ct.l0.z + (lt.z + ct.lb.z - ct.l0.z) * ce;
+        // lookAt wants three scalars - a plain {x,y,z} object would
+        // silently produce a NaN quaternion.
+        tcam.lookAt(camLook.x, camLook.y, camLook.z);
+        // Keep the orbit pivot on the look-at point so handing control
+        // back to OrbitControls never rotates around a stale target.
+        try {
+          var tctr = Graph.controls();
+          if (tctr && tctr.target) tctr.target.set(camLook.x, camLook.y, camLook.z);
+        } catch (e) {}
+        if (cp >= 1) {
+          // Hold the landed pose for a moment: the gather latch and the
+          // engine restart can still shuffle nodes briefly, and the relative
+          // orbit formulation keeps the selected node centred while they
+          // settle. A pointerdown / wheel cancels the tween and hands over.
+          if (!ct.hold) ct.hold = performance.now();
+          if (performance.now() - ct.hold > 4000) camTween = null;
+        }
+      }
+    }
     // Ambient spin: ease the camera azimuthally around the cloud centre while
     // the root view is at rest (see the spin state machine below).
     // OrbitControls' rotateLeft helper is absent
@@ -908,7 +1005,14 @@ const html = `<!doctype html>
         var sa = Math.sin(ang);
         cam.position.x = spinCenter.x + px * ca + pz * sa;
         cam.position.z = spinCenter.z - px * sa + pz * ca;
-        cam.lookAt(spinCenter);
+        camLook.x = spinCenter.x;
+        camLook.y = spinCenter.y;
+        camLook.z = spinCenter.z;
+        cam.lookAt(spinCenter.x, spinCenter.y, spinCenter.z);
+        try {
+          var rctr = Graph.controls();
+          if (rctr && rctr.target) rctr.target.set(camLook.x, camLook.y, camLook.z);
+        } catch (e) {}
       }
     }
     // Gather tween: exponential approach toward each target. Self-correcting
@@ -920,14 +1024,39 @@ const html = `<!doctype html>
       var gn = g.n;
       if (gn.x === undefined) { delete gatherMap[gid]; continue; }
       var gdx = g.tx - gn.x, gdy = g.ty - gn.y, gdz = g.tz - gn.z;
-      if (Math.abs(gdx) > 0.05 || Math.abs(gdy) > 0.05 || Math.abs(gdz) > 0.05) {
-        gn.x += gdx * 0.07;
-        gn.y += gdy * 0.07;
-        gn.z += gdz * 0.07;
+      // Hard deadline: the tween (and the engine tick it keeps alive) must
+      // always terminate even if the d3 forces keep nudging positions.
+      var snap = performance.now() - gatherT0 > 2500;
+      if (snap) {
+        gn.x = g.tx; gn.y = g.ty; gn.z = g.tz;
+      } else if (Math.abs(gdx) > 0.05 || Math.abs(gdy) > 0.05 || Math.abs(gdz) > 0.05) {
+        gn.x += gdx * 0.12;
+        gn.y += gdy * 0.12;
+        gn.z += gdz * 0.12;
         gathering = true;
       } else {
         gn.x = g.tx; gn.y = g.ty; gn.z = g.tz;
       }
+      // The vendored renderer only copies data coords onto the Object3D
+      // while the d3 engine runs; the tween keeps writing after it cools,
+      // so mirror the position onto the node group (its label sprite is a
+      // child and follows).
+      if (gn.__obj) gn.__obj.position.set(gn.x, gn.y, gn.z);
+    }
+    // The tween moved nodes after the line geometry was baked (lines only
+    // follow data coords while the d3 engine ticks), which left hot curves
+    // overshooting the spheres. Rebuild ONCE per gather assignment so the
+    // curves re-anchor on the final positions - testing the transition per
+    // frame would keep firing on a converged (still-populated) map and
+    // choke the page in endless rebuilds.
+    if (gatherNeedsRefresh && !gathering) {
+      gatherNeedsRefresh = false;
+      if (!paused) refreshLinksNow();
+      // Stop the engine now that everything landed: leaving it running
+      // would keep rebuilding hot-link tube geometry every frame for the
+      // full 15s cooldown window.
+      try { Graph.cooldownTicks(1); } catch (e) {}
+      gatherActive = false;
     }
     for (var i = 0; i < nodes.length; i++) {
       var n = nodes[i];
@@ -994,6 +1123,11 @@ const html = `<!doctype html>
         : "rgba(0,0,0,0)";
     })
     .linkWidth(function (l) { return isHot(l) ? 0.8 : 0; })
+    // Quadratic-bezier arcs like the reference - hot links only. Curvature
+    // forces per-link bezier evaluation + 31-point geometry on every layout
+    // tick, so a global value would tax all 528 idle links each frame; the
+    // accessor is re-evaluated per update, matching isHot's refresh timing.
+    .linkCurvature(function (l) { return isHot(l) ? 0.2 : 0; })
     .linkOpacity(0.4)
     // Directional particles only on the focused node's links (a handful), so
     // the cost stays tiny while the reference's "flow" cue is preserved.
@@ -1021,6 +1155,11 @@ const html = `<!doctype html>
         // release back home (or to the selected term if one is focused).
         queueGather(120);
       }
+      // Like the reference, the ambient spin holds its breath while a node
+      // is hovered and picks up again almost immediately after the pointer
+      // leaves (drags and wheel keep the longer 3s buffer).
+      if (hoverNode) yieldSpin();
+      else pauseSpinTemporarily(200);
       wake();
     })
     .onBackgroundClick(function () {
@@ -1030,6 +1169,9 @@ const html = `<!doctype html>
     })
     .onEngineStop(function () {
       engineSettled = true;
+      // The gather latch shortened the cooldown to stop the engine early;
+      // restore the default so future countdowns run their normal course.
+      try { Graph.cooldownTicks(Infinity); } catch (e) {}
       // Frame the whole graph once the layout settles. Focused views own the
       // camera via fitCluster, so never let this whole-graph framing overwrite
       // them. Never call refreshLinks() here: re-setting accessors restarts the
@@ -1038,7 +1180,7 @@ const html = `<!doctype html>
         fitted = true;
         frameRoot();
         queueWelcomeSpin();
-      } else if (current && focused && nodes[current.index].x !== undefined) {
+      } else if (current && focused && !camTween && nodes[current.index].x !== undefined) {
         // Link refreshes reheat the engine and drift node positions after
         // the camera aimed; re-aim once it re-settles so the selected node
         // stays centred. Camera tweens never restart the engine, so this
@@ -1064,7 +1206,8 @@ const html = `<!doctype html>
   var animating = true; // eased node properties have not converged yet
   var rotating = false;
   var spinResumeTimer = null;
-  var SPIN_RATE = 0.0018; // rad/frame at 60fps ≈ 58s per revolution
+  var pointerDown = false; // drag in progress - the spin must not resume
+  var SPIN_RATE = 0.0009; // rad/frame at 60fps ≈ 120s per revolution
   function yieldSpin() {
     rotating = false;
     if (spinResumeTimer) { clearTimeout(spinResumeTimer); spinResumeTimer = null; }
@@ -1072,12 +1215,20 @@ const html = `<!doctype html>
   function maybeResumeSpin() {
     spinResumeTimer = null;
     if (current && focused) return; // a selection still owns the camera
+    // Deferred, not denied: while the pointer sits on a node or drags, the
+    // camera must stay still; retry (drags keep the full 3s buffer, hover
+    // polls in case the library never emits the hover-out event).
+    if (pointerDown) { spinResumeTimer = setTimeout(maybeResumeSpin, 3000); return; }
+    if (hoverNode) { spinResumeTimer = setTimeout(maybeResumeSpin, 500); return; }
     rotating = true;
     wake();
   }
-  function pauseSpinTemporarily() {
+  function pauseSpinTemporarily(delay) {
+    // Never trust the argument's shape: as an event listener this used to
+    // receive a PointerEvent, which is truthy and defeated the 3s default.
+    if (typeof delay !== "number") delay = 3000;
     yieldSpin();
-    spinResumeTimer = setTimeout(maybeResumeSpin, 3000);
+    spinResumeTimer = setTimeout(maybeResumeSpin, delay);
   }
   // First framing at boot: start the ambient spin unless a deep link opened
   // straight into a focused view.
@@ -1192,12 +1343,15 @@ const html = `<!doctype html>
 
   /* ---------- gather: ease a selection's neighbours toward it ---------- */
   // The reference only re-frames the camera; per the user's request we also
-  // pull connected nodes ~1/3 of the way toward the hovered / selected node
+  // pull connected nodes part-way toward the hovered / selected node
   // once the layout has cooled, and send them home when the emphasis clears. The
   // tween runs in the shared rAF loop (see animateNodes) and costs nothing
   // at rest - once converged the scene sleeps as usual.
   var gatherMap = {};
-  var GATHER_PULL = 0.32;
+  var gatherNeedsRefresh = false; // re-anchor line geometry once the tween lands
+  var gatherT0 = 0; // when the current gather assignment started
+  var gatherActive = false; // a gather tween is out - the engine must tick
+  var GATHER_PULL = 0.6; // neighbours ease to 60% of their original distance
   function setGatherTargets(selIdx) {
     var next = {};
     var sel = selIdx != null ? nodes[selIdx] : null;
@@ -1210,12 +1364,15 @@ const html = `<!doctype html>
         // Home = natural position, captured the first time this node is
         // pulled, so releasing always returns it to the same spot.
         var home = gatherMap[n.id] ? gatherMap[n.id].home : { x: n.x, y: n.y, z: n.z };
+        // Target derives from HOME, not the current (possibly mid-gather)
+        // position: repeated hover->click chains would otherwise compound
+        // the pull (0.6 twice = 0.36) and pack neighbours unclickable.
         next[n.id] = {
           n: n,
           home: home,
-          tx: sel.x + (n.x - sel.x) * GATHER_PULL,
-          ty: sel.y + (n.y - sel.y) * GATHER_PULL,
-          tz: sel.z + (n.z - sel.z) * GATHER_PULL,
+          tx: sel.x + (home.x - sel.x) * GATHER_PULL,
+          ty: sel.y + (home.y - sel.y) * GATHER_PULL,
+          tz: sel.z + (home.z - sel.z) * GATHER_PULL,
         };
       }
     }
@@ -1228,6 +1385,15 @@ const html = `<!doctype html>
       }
     }
     gatherMap = next;
+    gatherNeedsRefresh = true; // re-anchor line geometry once the tween lands
+    gatherT0 = performance.now();
+    gatherActive = true;
+    // Line geometry only follows node data coords while the engine ticks
+    // (tickFrame gates it behind engineRunning), and a long-idle page has
+    // already cooled down - restart the countdown so lines and nodes finish
+    // their gather in lockstep, like the reference. The latch below stops
+    // the engine again once the tween lands.
+    restartEngineForGather();
     wake();
   }
   // The gather target is whatever owns the emphasis right now: the hovered
@@ -1246,6 +1412,33 @@ const html = `<!doctype html>
       gatherDelay = null;
       setGatherTargets(expectedGatherTarget());
     }, delay || 120);
+  }
+
+  // Click / deep-link camera sequence. The tween itself tracks the node's
+  // live position, so it can start immediately - only a not-yet-placed node
+  // (deep link racing the initial layout) needs the retry poll.
+  var settleTimer = null;
+  function aimWhenSettled(selIdx) {
+    if (settleTimer) clearInterval(settleTimer);
+    if (nodes[selIdx] && nodes[selIdx].x !== undefined) {
+      try { fitCluster(selIdx); } catch (e) {}
+      queueGather(60);
+      return;
+    }
+    var deadline = Date.now() + 4000;
+    settleTimer = setInterval(function () {
+      if (!current || current.index !== selIdx || Date.now() > deadline) {
+        clearInterval(settleTimer);
+        settleTimer = null;
+        return;
+      }
+      if (nodes[selIdx] && nodes[selIdx].x !== undefined) {
+        clearInterval(settleTimer);
+        settleTimer = null;
+        try { fitCluster(selIdx); } catch (e) {}
+        queueGather(60);
+      }
+    }, 150);
   }
 
   window.addEventListener("resize", function () {
@@ -1267,7 +1460,20 @@ const html = `<!doctype html>
   });
   ["pointerdown", "wheel"].forEach(function (ev) {
     document.getElementById("graph").addEventListener(ev, hideHint, { once: true, passive: true });
-    document.getElementById("graph").addEventListener(ev, pauseSpinTemporarily, { passive: true });
+    // Wrapped: passing pauseSpinTemporarily directly would hand it the
+    // Event object as the delay argument.
+    document.getElementById("graph").addEventListener(ev, function () {
+      camTween = null; // the gesture owns the camera now
+      pauseSpinTemporarily();
+    }, { passive: true });
+  });
+  document.getElementById("graph").addEventListener("pointerdown", function () {
+    pointerDown = true;
+  }, { passive: true });
+  ["pointerup", "pointercancel"].forEach(function (ev) {
+    window.addEventListener(ev, function () {
+      pointerDown = false;
+    }, { passive: true });
   });
 
   /* ---------- camera focus ---------- */
@@ -1283,6 +1489,57 @@ const html = `<!doctype html>
   // on the library's async zoom getter, which returned a stale pre-fit value
   // and left the cloud a small centred clump.
   var spinCenter = null; // welcome-spin orbit centre (cloud centroid)
+  // Custom camera tween state. The library's cameraPosition tween cannot
+  // track a node that the gather tween is simultaneously moving, and the
+  // reference's move-to-centre reads as a turntable sweep - so we tween the
+  // orbit and the look-at point ourselves (see animateNodes).
+  var camTween = null;
+  var camLook = { x: 0, y: 0, z: 0 }; // current look-at point, kept in sync
+  // Turntable flight: the camera orbits the target's vertical axis while the
+  // look-at sweeps onto it, so the rest of the graph visibly rotates and the
+  // selected node swings to the screen centre, like the reference.
+  function flyCamera(toLook, dist, dur, trackNode, swing) {
+    var cam = null;
+    try { cam = Graph.camera(); } catch (e) {}
+    if (!cam) return;
+    var pivot = trackNode || toLook;
+    var vx = cam.position.x - pivot.x, vy = cam.position.y - pivot.y, vz = cam.position.z - pivot.z;
+    var d0 = Math.sqrt(vx * vx + vy * vy + vz * vz) || 1;
+    var u0 = { x: vx / d0, y: vy / d0, z: vz / d0 }; // unit offset from pivot
+    // Swing angle: signed horizontal angle from the current view forward to
+    // the target, so the world turns just far enough to bring it over.
+    // Clamped to +-75 deg; skipped when already near the view axis.
+    var rot = 0;
+    if (swing) {
+      var a1 = Math.atan2(camLook.z - cam.position.z, camLook.x - cam.position.x);
+      var a2 = Math.atan2(pivot.z - cam.position.z, pivot.x - cam.position.x);
+      var dd = a2 - a1;
+      while (dd > Math.PI) dd -= 2 * Math.PI;
+      while (dd < -Math.PI) dd += 2 * Math.PI;
+      if (dd > 1.31) dd = 1.31;
+      if (dd < -1.31) dd = -1.31;
+      // Always turn at least a little: the reference's move reads as a
+      // turntable rotation even for near-centre targets.
+      if (dd > 0 && dd < 0.25) dd = 0.25;
+      if (dd < 0 && dd > -0.25) dd = -0.25;
+      rot = dd;
+    }
+    camTween = {
+      t0: performance.now(),
+      dur: dur || 800,
+      pivot: pivot, // tracked live so the flight follows the gather tween
+      u0: u0,
+      r0: d0,
+      r1: dist,
+      rot: rot,
+      // World-space look bias (panel offset): the look-at lands on the live
+      // node plus this fixed offset, so drift cannot shake the framing.
+      lb: { x: toLook.x - pivot.x, y: toLook.y - pivot.y, z: toLook.z - pivot.z },
+      l0: { x: camLook.x, y: camLook.y, z: camLook.z },
+      node: trackNode || null,
+    };
+    wake();
+  }
   function frameRoot() {
     var cx = 0, cy = 0, cz = 0, i, n;
     for (i = 0; i < nodes.length; i++) {
@@ -1301,46 +1558,22 @@ const html = `<!doctype html>
     var fov = (Graph.camera().fov || 40) * Math.PI / 180;
     var fitDist = (R / Math.tan(fov / 2)) * 1.05;
     var dist = fitDist * 0.9; // node cloud fills the frame, hubs kiss the edges
-    var cam = Graph.cameraPosition();
-    var vx = cam.x - cx, vy = cam.y - cy, vz = cam.z - cz;
-    var vd = Math.sqrt(vx * vx + vy * vy + vz * vz) || 1;
-    Graph.cameraPosition(
-      { x: cx + (vx / vd) * dist, y: cy + (vy / vd) * dist, z: cz + (vz / vd) * dist },
-      { x: cx, y: cy, z: cz },
-      1100
-    );
+    flyCamera({ x: cx, y: cy, z: cz }, dist, 1100, null, false);
   }
 
   function fitCluster(selIdx) {
     var selN = nodes[selIdx];
     if (selN.x === undefined) return; // engine has not placed nodes yet
     var R = 100; // framing radius: selected node + its neighbours read clearly
-    var cam = Graph.cameraPosition();
-    var dx = cam.x - selN.x, dy = cam.y - selN.y, dz = cam.z - selN.z;
-    var d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
     var fov = (Graph.camera().fov || 40) * Math.PI / 180;
     var dist = (R / Math.tan(fov / 2)) * 1.05;
-    // Centre the node in the *visible* area: with the panel open the wrap
-    // translates left by half the panel width, so bias the look-at target
-    // right by the same fraction of the frustum width to land the node
-    // mid-screen instead of mid-canvas (mobile shifts vertically instead,
-    // which the default centring already accounts for).
+    // Always aim straight at the node: the reference keeps the selected node
+    // at the canvas centre (its panel overlays instead of re-framing), so no
+    // visible-area bias here.
     var look = { x: selN.x, y: selN.y, z: selN.z };
-    if (panelOpen && window.innerWidth > 800) {
-      var fx = -dx / d, fy = -dy / d, fz = -dz / d; // camera forward
-      var rx = -fz, rz = fx; // forward x up(0,1,0), renormalised below
-      var rl = Math.sqrt(rx * rx + rz * rz) || 1;
-      rx /= rl; rz /= rl;
-      var aspect = window.innerWidth / Math.max(window.innerHeight, 1);
-      var off = 0.3333 * dist * Math.tan(fov / 2) * aspect;
-      look.x = selN.x - rx * off;
-      look.z = selN.z - rz * off;
-    }
-    Graph.cameraPosition(
-      { x: selN.x + (dx / d) * dist, y: selN.y + (dy / d) * dist, z: selN.z + (dz / d) * dist },
-      look,
-      700
-    );
+    // Turntable: orbit around the node while the look-at sweeps onto it, so
+    // the rest of the graph rotates the selection to the screen centre.
+    flyCamera(look, dist, 800, selN, true);
   }
 
   /* ---------- panel (slides in from the right, canvas shifts to make room) ---------- */
@@ -1479,9 +1712,9 @@ const html = `<!doctype html>
     // selection is active (Esc keeps it paused; clearing the selection
     // resumes it).
     yieldSpin();
-    // Camera eases toward the selected node and its neighbours gather.
-    try { fitCluster(t.index); } catch (e) {}
-    queueGather(260);
+    // Camera eases toward the selected node (look-at sweeps there, so the
+    // node rotates to screen centre) and its neighbours gather in lockstep.
+    aimWhenSettled(t.index);
   }
   function step(delta) {
     if (!current) return;
@@ -1609,19 +1842,8 @@ const html = `<!doctype html>
     }
     refreshLinks();
   }, 1500);
-  // Deep-linked entries may need to wait for the engine to place nodes before
-  // the camera can focus; retry once when it settles.
-  var focusDeadline = Date.now() + 4000;
-  var focusPoll = setInterval(function () {
-    if (!current || !focused) { clearInterval(focusPoll); return; }
-    if (nodes[current.index] && nodes[current.index].x !== undefined && engineSettled) {
-      clearInterval(focusPoll);
-      try { fitCluster(current.index); } catch (e) {}
-      queueGather(260);
-    } else if (Date.now() > focusDeadline) {
-      clearInterval(focusPoll);
-    }
-  }, 400);
+  // Deep-link / selection camera work is handled by aimWhenSettled, which
+  // waits out the same engine churn before easing in.
   wake();
 })();
 </script>
