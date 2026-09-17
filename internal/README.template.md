@@ -1,5 +1,5 @@
 <p>
-  <a href="https://www.aihero.dev/ai-coding-dictionary">
+  <a href="https://crazycrabs.github.io/dictionary-of-ai-coding/">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="https://res.cloudinary.com/total-typescript/image/upload/v1777878285/dictionary-dark_2x.png">
       <source media="(prefers-color-scheme: light)" srcset="https://res.cloudinary.com/total-typescript/image/upload/v1777878285/dictionary-light_2x.png">
